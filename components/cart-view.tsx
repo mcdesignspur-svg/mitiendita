@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useCart } from "./cart-context";
+import { AthButton, type AthOrder } from "./ath-button";
 import { money } from "@/lib/format";
 import { checkoutAction, type FormState } from "@/lib/actions";
+
+const ATHM_PUB = process.env.NEXT_PUBLIC_ATHM_PUBLIC_TOKEN || "";
+const ATHM_PHONE = process.env.NEXT_PUBLIC_ATHM_PHONE || "";
 
 export function CartView({
   kind,
@@ -21,17 +25,44 @@ export function CartView({
     {},
   );
 
+  const [customerName, setCustomerName] = useState("");
+  const [email, setEmail] = useState("");
+  const [athOrder, setAthOrder] = useState<AthOrder | null>(null);
+  const [athLoading, setAthLoading] = useState(false);
+  const [athError, setAthError] = useState<string | null>(null);
+
   const items = lines.map((l) => ({
     productId: l.productId,
     name: l.name,
     qty: l.qty,
     unitPrice: l.unitPrice,
   }));
-  // Envío del pedido = el más alto entre los productos del carrito.
   const shipping = lines.reduce((m, l) => Math.max(m, l.shippingPrice || 0), 0);
   const total = subtotal + shipping;
-  const athAvailable =
-    kind === "b2c" && total > 0 && total <= 1500 && !!process.env.NEXT_PUBLIC_ATHM_PUBLIC_TOKEN;
+  const athAvailable = kind === "b2c" && total > 0 && total <= 1500 && !!ATHM_PUB;
+
+  async function startAth() {
+    if (!customerName.trim() || !email.trim()) {
+      setAthError("Escribe tu nombre y email para pagar con ATH Móvil.");
+      return;
+    }
+    setAthError(null);
+    setAthLoading(true);
+    try {
+      const res = await fetch("/api/ath/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ customerName, email, items, shipping }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.order) throw new Error(data.error || "No se pudo iniciar ATH Móvil.");
+      setAthOrder(data.order as AthOrder);
+    } catch (e) {
+      setAthError(e instanceof Error ? e.message : "No se pudo iniciar ATH Móvil.");
+    } finally {
+      setAthLoading(false);
+    }
+  }
 
   if (lines.length === 0) {
     return (
@@ -85,7 +116,7 @@ export function CartView({
       </div>
 
       {/* checkout */}
-      <form action={formAction} className="card p-6 lg:sticky lg:top-24">
+      <div className="card p-6 lg:sticky lg:top-24">
         <h2 className="font-display text-2xl mb-1">Resumen</h2>
         {kind === "b2b" && (
           <p className="text-xs font-semibold mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: "#e7f7f3", color: "var(--color-teal-deep)" }}>
@@ -105,41 +136,83 @@ export function CartView({
           <span className="font-display text-2xl tabular-nums">{money(total)}</span>
         </div>
 
-        <input type="hidden" name="items" value={JSON.stringify(items)} />
-        <input type="hidden" name="kind" value={kind} />
-        <input type="hidden" name="shipping" value={shipping} />
-        {businessId && <input type="hidden" name="businessId" value={businessId} />}
-
         <label className="label" htmlFor="customerName">Nombre</label>
-        <input id="customerName" name="customerName" className="field mb-3" placeholder="Tu nombre" required />
+        <input
+          id="customerName"
+          className="field mb-3"
+          placeholder="Tu nombre"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          required
+        />
         <label className="label" htmlFor="email">Email</label>
-        <input id="email" name="email" type="email" className="field mb-4" placeholder="tu@email.com" required />
+        <input
+          id="email"
+          type="email"
+          className="field mb-4"
+          placeholder="tu@email.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-        {state.error && (
-          <p className="text-sm mb-3 font-semibold" style={{ color: "var(--color-coral-deep)" }}>
-            {state.error}
-          </p>
-        )}
+        {/* Tarjeta / factura (Stripe) */}
+        <form action={formAction}>
+          <input type="hidden" name="items" value={JSON.stringify(items)} />
+          <input type="hidden" name="kind" value={kind} />
+          <input type="hidden" name="shipping" value={shipping} />
+          <input type="hidden" name="method" value="stripe" />
+          <input type="hidden" name="customerName" value={customerName} />
+          <input type="hidden" name="email" value={email} />
+          {businessId && <input type="hidden" name="businessId" value={businessId} />}
 
-        <button type="submit" name="method" value="stripe" disabled={pending} className="btn btn-primary w-full">
-          {pending
-            ? "Procesando…"
-            : kind === "b2b"
-              ? "Confirmar pedido (factura) →"
-              : "Pagar con tarjeta →"}
-        </button>
+          {state.error && (
+            <p className="text-sm mb-3 font-semibold" style={{ color: "var(--color-coral-deep)" }}>
+              {state.error}
+            </p>
+          )}
 
-        {athAvailable && (
-          <button
-            type="submit"
-            name="method"
-            value="ath"
-            disabled={pending}
-            className="btn w-full mt-2"
-            style={{ background: "#ff6a00", color: "#fff", borderColor: "var(--color-ink)", boxShadow: "var(--shadow-pop-sm)" }}
-          >
-            🇵🇷 Pagar con ATH Móvil
+          <button type="submit" disabled={pending} className="btn btn-primary w-full">
+            {pending
+              ? "Procesando…"
+              : kind === "b2b"
+                ? "Confirmar pedido (factura) →"
+                : "Pagar con tarjeta →"}
           </button>
+        </form>
+
+        {/* ATH Móvil (B2C) — botón oficial inline */}
+        {athAvailable && (
+          <div className="mt-3">
+            {!athOrder ? (
+              <button
+                type="button"
+                onClick={startAth}
+                disabled={athLoading}
+                className="btn w-full"
+                style={{ background: "#ff6a00", color: "#fff", borderColor: "var(--color-ink)", boxShadow: "var(--shadow-pop-sm)" }}
+              >
+                {athLoading ? "Preparando…" : "🇵🇷 Pagar con ATH Móvil"}
+              </button>
+            ) : (
+              <div>
+                <AthButton order={athOrder} publicToken={ATHM_PUB} phone={ATHM_PHONE} />
+                <button
+                  type="button"
+                  onClick={() => setAthOrder(null)}
+                  className="text-xs underline w-full text-center mt-2"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  Usar otro método de pago
+                </button>
+              </div>
+            )}
+            {athError && (
+              <p className="text-sm mt-2 font-semibold" style={{ color: "var(--color-coral-deep)" }}>
+                {athError}
+              </p>
+            )}
+          </div>
         )}
 
         <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
@@ -149,7 +222,7 @@ export function CartView({
               ? "Pago seguro: tarjeta y Apple/Google Pay (Stripe), o ATH Móvil."
               : "Pago seguro con Stripe. Aceptamos tarjeta, Apple Pay y Google Pay."}
         </p>
-      </form>
+      </div>
     </div>
   );
 }
