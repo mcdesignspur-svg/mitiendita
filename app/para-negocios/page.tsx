@@ -62,22 +62,22 @@ export default async function ParaNegociosPage() {
             <div className="px-5 py-3 text-sm font-bold" style={{ background: "var(--color-ink)", color: "var(--color-cream)" }}>
               Ejemplos de ahorro mayorista
             </div>
-            <table className="w-full text-sm">
+            <table className="w-full text-xs sm:text-sm">
               <thead>
                 <tr style={{ color: "var(--color-muted)" }}>
-                  <th className="text-left font-semibold px-4 py-2">Producto</th>
-                  <th className="text-right font-semibold px-3 py-2">Detal</th>
-                  <th className="text-right font-semibold px-3 py-2">Mayor</th>
-                  <th className="text-right font-semibold px-4 py-2">Ahorro</th>
+                  <th className="text-left font-semibold px-2 sm:px-4 py-2">Producto</th>
+                  <th className="text-right font-semibold px-2 sm:px-3 py-2">Detal</th>
+                  <th className="text-right font-semibold px-2 sm:px-3 py-2">Mayor</th>
+                  <th className="text-right font-semibold px-2 sm:px-4 py-2">Ahorro</th>
                 </tr>
               </thead>
               <tbody>
                 {samples.map((p) => (
                   <tr key={p.id} className="border-t" style={{ borderColor: "var(--color-line)" }}>
-                    <td className="px-4 py-2.5 font-medium">{p.emoji} {p.name.split(" ").slice(0, 2).join(" ")}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "var(--color-muted)" }}>{money(p.retail)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: "var(--color-teal-deep)" }}>{money(p.wholesale)}</td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-2 sm:px-4 py-2.5 font-medium">{p.emoji} {p.name.split(" ").slice(0, 2).join(" ")}</td>
+                    <td className="px-2 sm:px-3 py-2.5 text-right tabular-nums" style={{ color: "var(--color-muted)" }}>{money(p.retail)}</td>
+                    <td className="px-2 sm:px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: "var(--color-teal-deep)" }}>{money(p.wholesale)}</td>
+                    <td className="px-2 sm:px-4 py-2.5 text-right">
                       <span className="badge badge-top">−{pct(1 - p.wholesale / p.retail)}</span>
                     </td>
                   </tr>

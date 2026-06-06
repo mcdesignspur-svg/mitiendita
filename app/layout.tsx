@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/cart-context";
@@ -23,6 +23,12 @@ export const metadata: Metadata = {
   title: "Mi Tiendita PR — Productos virales importados | Al detal y al por mayor",
   description:
     "Productos importados de alta utilidad y virales para individuos, gasolineras, farmacias y mini-markets en Puerto Rico. Precios especiales para negocios con Registro de Comerciante.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#fbf6ec",
 };
 
 export default async function RootLayout({

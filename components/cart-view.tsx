@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useCart } from "./cart-context";
 import { AthButton, type AthOrder } from "./ath-button";
 import { money } from "@/lib/format";
@@ -9,6 +9,7 @@ import { checkoutAction, type FormState } from "@/lib/actions";
 
 const ATHM_PUB = process.env.NEXT_PUBLIC_ATHM_PUBLIC_TOKEN || "";
 const ATHM_PHONE = process.env.NEXT_PUBLIC_ATHM_PHONE || "";
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export function CartView({
   kind,
@@ -30,6 +31,7 @@ export function CartView({
   const [athOrder, setAthOrder] = useState<AthOrder | null>(null);
   const [athLoading, setAthLoading] = useState(false);
   const [athError, setAthError] = useState<string | null>(null);
+  const lastSig = useRef("");
 
   const items = lines.map((l) => ({
     productId: l.productId,
@@ -40,29 +42,41 @@ export function CartView({
   const shipping = lines.reduce((m, l) => Math.max(m, l.shippingPrice || 0), 0);
   const total = subtotal + shipping;
   const athAvailable = kind === "b2c" && total > 0 && total <= 1500 && !!ATHM_PUB;
+  const contactReady = customerName.trim().length > 1 && EMAIL_RE.test(email);
 
-  async function startAth() {
-    if (!customerName.trim() || !email.trim()) {
-      setAthError("Escribe tu nombre y email para pagar con ATH Móvil.");
+  // Cuando hay nombre + email válidos, crea la orden y el botón oficial de ATH
+  // Móvil aparece solo (sin clic intermedio). Se re-crea si cambia el carrito.
+  const sig = JSON.stringify({ n: customerName.trim(), e: email.trim(), items, shipping });
+  useEffect(() => {
+    if (!athAvailable || !contactReady) {
+      setAthOrder(null);
+      lastSig.current = "";
       return;
     }
-    setAthError(null);
-    setAthLoading(true);
-    try {
-      const res = await fetch("/api/ath/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ customerName, email, items, shipping }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.order) throw new Error(data.error || "No se pudo iniciar ATH Móvil.");
-      setAthOrder(data.order as AthOrder);
-    } catch (e) {
-      setAthError(e instanceof Error ? e.message : "No se pudo iniciar ATH Móvil.");
-    } finally {
-      setAthLoading(false);
-    }
-  }
+    if (lastSig.current === sig) return;
+    const h = setTimeout(async () => {
+      lastSig.current = sig;
+      setAthLoading(true);
+      setAthError(null);
+      try {
+        const res = await fetch("/api/ath/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ customerName, email, items, shipping }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.order) throw new Error(data.error || "No se pudo preparar ATH Móvil.");
+        setAthOrder(data.order as AthOrder);
+      } catch (err) {
+        setAthError(err instanceof Error ? err.message : "No se pudo preparar ATH Móvil.");
+        setAthOrder(null);
+      } finally {
+        setAthLoading(false);
+      }
+    }, 600);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, contactReady, athAvailable]);
 
   if (lines.length === 0) {
     return (
@@ -84,10 +98,10 @@ export function CartView({
       {/* lines */}
       <div className="space-y-3">
         {lines.map((l) => (
-          <div key={l.productId} className="card p-4 flex items-center gap-4">
+          <div key={l.productId} className="card p-3 sm:p-4 flex flex-wrap items-center gap-3 sm:gap-4">
             <Link
               href={`/productos/${l.slug}`}
-              className="grid place-items-center w-16 h-16 rounded-xl text-3xl shrink-0"
+              className="grid place-items-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl text-3xl shrink-0"
               style={{ background: "var(--color-cream-2)", border: "1.5px solid var(--color-line)" }}
             >
               {l.emoji}
@@ -100,17 +114,22 @@ export function CartView({
                 {money(l.unitPrice)} c/u
               </span>
             </div>
-            <div className="flex items-center rounded-full overflow-hidden shrink-0" style={{ border: "2px solid var(--color-ink)" }}>
-              <button className="px-3 py-1.5 font-bold" onClick={() => setQty(l.productId, l.qty - 1)}>−</button>
-              <span className="px-3 font-bold tabular-nums">{l.qty}</span>
-              <button className="px-3 py-1.5 font-bold" onClick={() => setQty(l.productId, l.qty + 1)}>+</button>
+            {/* Controles: en móvil bajan a una segunda línea a ancho completo */}
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="flex items-center rounded-full overflow-hidden shrink-0" style={{ border: "2px solid var(--color-ink)" }}>
+                <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty - 1)} aria-label="Menos">−</button>
+                <span className="px-3 font-bold tabular-nums">{l.qty}</span>
+                <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty + 1)} aria-label="Más">+</button>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-display text-lg text-right tabular-nums sm:w-20 shrink-0">
+                  {money(l.qty * l.unitPrice)}
+                </span>
+                <button onClick={() => remove(l.productId)} className="text-xl shrink-0 p-1" aria-label="Eliminar" style={{ color: "var(--color-muted)" }}>
+                  ✕
+                </button>
+              </div>
             </div>
-            <span className="font-display text-lg w-20 text-right tabular-nums shrink-0">
-              {money(l.qty * l.unitPrice)}
-            </span>
-            <button onClick={() => remove(l.productId)} className="text-xl shrink-0" aria-label="Eliminar" style={{ color: "var(--color-muted)" }}>
-              ✕
-            </button>
           </div>
         ))}
       </div>
@@ -181,30 +200,18 @@ export function CartView({
           </button>
         </form>
 
-        {/* ATH Móvil (B2C) — botón oficial inline */}
+        {/* ATH Móvil (B2C) — el botón oficial aparece solo al tener nombre+email */}
         {athAvailable && (
           <div className="mt-3">
-            {!athOrder ? (
-              <button
-                type="button"
-                onClick={startAth}
-                disabled={athLoading}
-                className="btn w-full"
-                style={{ background: "#ff6a00", color: "#fff", borderColor: "var(--color-ink)", boxShadow: "var(--shadow-pop-sm)" }}
-              >
-                {athLoading ? "Preparando…" : "🇵🇷 Pagar con ATH Móvil"}
-              </button>
+            {athOrder ? (
+              <AthButton key={athOrder.id} order={athOrder} publicToken={ATHM_PUB} phone={ATHM_PHONE} />
             ) : (
-              <div>
-                <AthButton order={athOrder} publicToken={ATHM_PUB} phone={ATHM_PHONE} />
-                <button
-                  type="button"
-                  onClick={() => setAthOrder(null)}
-                  className="text-xs underline w-full text-center mt-2"
-                  style={{ color: "var(--color-muted)" }}
-                >
-                  Usar otro método de pago
-                </button>
+              <div
+                className="text-center text-sm rounded-xl px-4 py-3"
+                style={{ background: "#fff4ef", color: "var(--color-coral-deep)", border: "1.5px solid #ffd0bf" }}
+              >
+                🇵🇷 Escribe tu <strong>nombre</strong> y <strong>email</strong> arriba para pagar con ATH Móvil
+                {athLoading && " · preparando…"}
               </div>
             )}
             {athError && (
