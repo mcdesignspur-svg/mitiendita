@@ -10,6 +10,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx lib/seed.ts",
+    "migrate:catalog": "tsx lib/migrate-catalog.ts",
     "operator": "tsx lib/operator.ts"
   },
   "dependencies": {
