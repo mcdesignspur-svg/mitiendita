@@ -232,6 +232,17 @@ function CandidateCard({ c }: { c: SourcingCandidate & { score: number } }) {
         <Mini label="Margen" value={pct(margin)} />
       </div>
       <p className="text-xs mt-3 font-semibold" style={{ color: "var(--color-teal-deep)" }}>📈 {c.signal}</p>
+      {c.sourceUrl && (
+        <a
+          href={c.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold inline-flex items-center gap-1 mt-2 hover:underline"
+          style={{ color: "var(--color-grape)" }}
+        >
+          🔗 Ver en Alibaba
+        </a>
+      )}
 
       <div className="flex flex-wrap gap-2 mt-4 items-center">
         {c.productId ? (
