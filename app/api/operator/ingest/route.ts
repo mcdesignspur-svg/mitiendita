@@ -1,0 +1,80 @@
+import { NextResponse } from "next/server";
+import { ingestPayload, type CandidateInput, type SupplierInput } from "@/lib/ingest";
+
+export const runtime = "nodejs";
+
+const MAX_ITEMS = 50;
+
+/**
+ * Webhook de ingreso al "brain". Cualquier agente (el Claude de Chrome, un cron,
+ * Zapier, etc.) deposita candidatos/suplidores aquí y caen en la MISMA DB que
+ * lee la página y el operador.
+ *
+ *   POST https://mitiendita-six.vercel.app/api/operator/ingest
+ *   Authorization: Bearer <OPERATOR_INGEST_TOKEN>
+ *   Content-Type: application/json
+ *   { "candidates": [ { "name": "...", "supplier": "...", "unitCost": 6.8,
+ *       "estRetail": 27.99, "moq": 100, "sourceUrl": "https://alibaba.com/...",
+ *       "signal": "..." } ], "suppliers": [ { "name": "...", "platform": "Alibaba" } ] }
+ *
+ * Deshabilitado si no hay OPERATOR_INGEST_TOKEN (no abrimos un endpoint de
+ * escritura sin secreto).
+ */
+function authorized(req: Request): boolean {
+  const expected = process.env.OPERATOR_INGEST_TOKEN;
+  if (!expected) return false;
+  const header = req.headers.get("authorization") || "";
+  const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const token = bearer || req.headers.get("x-operator-token") || "";
+  if (token.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+export async function POST(req: Request) {
+  if (!process.env.OPERATOR_INGEST_TOKEN) {
+    return NextResponse.json(
+      { error: "Ingest deshabilitado: configura OPERATOR_INGEST_TOKEN en el entorno." },
+      { status: 503 },
+    );
+  }
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  let body: { candidates?: CandidateInput[]; suppliers?: SupplierInput[] };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+  }
+
+  const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
+  const suppliers = Array.isArray(body?.suppliers) ? body.suppliers : [];
+
+  if (candidates.length + suppliers.length === 0) {
+    return NextResponse.json({ error: "Nada que ingerir (manda 'candidates' y/o 'suppliers')." }, { status: 400 });
+  }
+  if (candidates.length > MAX_ITEMS || suppliers.length > MAX_ITEMS) {
+    return NextResponse.json({ error: `Máximo ${MAX_ITEMS} por tipo por request.` }, { status: 413 });
+  }
+  for (const c of candidates) {
+    if (!c || typeof c.name !== "string" || !c.name.trim()) {
+      return NextResponse.json({ error: "Cada candidato necesita un 'name'." }, { status: 400 });
+    }
+  }
+  for (const s of suppliers) {
+    if (!s || typeof s.name !== "string" || !s.name.trim()) {
+      return NextResponse.json({ error: "Cada suplidor necesita un 'name'." }, { status: 400 });
+    }
+  }
+
+  try {
+    const result = await ingestPayload({ candidates, suppliers });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("[ingest webhook] fallo:", e);
+    return NextResponse.json({ error: "Fallo al ingerir." }, { status: 500 });
+  }
+}

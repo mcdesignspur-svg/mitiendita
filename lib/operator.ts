@@ -14,43 +14,12 @@
  */
 import "./load-env"; // DEBE ir primero: carga .env antes de evaluar lib/db.
 import fs from "node:fs";
-import {
-  createCandidate,
-  createSupplier,
-  listCandidates,
-  listSuppliers,
-  getSupplierById,
-  updateSupplier,
-} from "./db";
+import { listCandidates, listSuppliers, getSupplierById, updateSupplier } from "./db";
 import { scoreFor } from "./sourcing";
 import { draftSupplierOutreach } from "./ai";
 import { alibabaEnabled, searchProducts } from "./alibaba";
-import type { SourcingCandidate, Supplier } from "./types";
-
-type CandidateInput = Partial<SourcingCandidate> & { name: string };
-type SupplierInput = Partial<Supplier> & { name: string };
-
-function normalizeCandidate(c: CandidateInput): Omit<SourcingCandidate, "id" | "createdAt"> {
-  return {
-    name: c.name,
-    emoji: c.emoji ?? "📦",
-    category: c.category ?? "General",
-    supplier: c.supplier ?? "",
-    supplierId: c.supplierId,
-    unitCost: c.unitCost ?? 0,
-    estRetail: c.estRetail ?? 0,
-    estWholesale: c.estWholesale,
-    moq: c.moq,
-    trend: c.trend ?? 0.5,
-    shipping: c.shipping ?? 0.4,
-    stage: c.stage ?? "Detectado",
-    signal: c.signal ?? "",
-    sourceUrl: c.sourceUrl,
-    notes: c.notes,
-    origin: c.origin ?? "agente",
-    productId: c.productId,
-  };
-}
+import { ingestPayload, type CandidateInput, type SupplierInput } from "./ingest";
+import type { SourcingCandidate } from "./types";
 
 async function ingest(file: string) {
   if (!file || !fs.existsSync(file)) {
@@ -62,21 +31,12 @@ async function ingest(file: string) {
     suppliers?: SupplierInput[];
   };
 
-  let ns = 0;
-  for (const s of data.suppliers ?? []) {
-    await createSupplier({ ...s, name: s.name, platform: s.platform ?? "Alibaba" });
-    console.log(`  + suplidor: ${s.name} (${s.platform ?? "Alibaba"})`);
-    ns++;
-  }
-
-  let nc = 0;
-  for (const c of data.candidates ?? []) {
-    const created = await createCandidate(normalizeCandidate(c));
-    console.log(`  + candidato: ${created.emoji} ${created.name} (score ${scoreFor(created)})`);
-    nc++;
-  }
-
-  console.log(`\n✅ Ingerido: ${nc} candidatos, ${ns} suplidores. Visibles ya en /admin.`);
+  const result = await ingestPayload(data);
+  for (const s of result.suppliers) console.log(`  + suplidor: ${s.name} (${s.platform})`);
+  for (const c of result.candidates) console.log(`  + candidato: ${c.emoji} ${c.name} (score ${c.score})`);
+  console.log(
+    `\n✅ Ingerido: ${result.candidates.length} candidatos, ${result.suppliers.length} suplidores. Visibles ya en /admin.`,
+  );
 }
 
 async function report() {
