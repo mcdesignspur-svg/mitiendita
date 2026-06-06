@@ -1,0 +1,214 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Mi Tiendita PR — Design tokens
+   Aesthetic: tropical-modern boricua. Warm cream base, deep ink,
+   sunset coral primary, Caribbean teal secondary, sun-yellow accent.
+   ============================================================ */
+@theme {
+  --font-display: var(--font-bricolage), "Georgia", serif;
+  --font-body: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  --color-cream: #fbf6ec;
+  --color-cream-2: #f4ecdd;
+  --color-ink: #1c1813;
+  --color-ink-soft: #4b443a;
+  --color-muted: #8a8072;
+
+  --color-coral: #ff5a36;
+  --color-coral-deep: #e23c19;
+  --color-teal: #0fae9e;
+  --color-teal-deep: #0a7d72;
+  --color-sun: #ffc53d;
+  --color-grape: #5b3fd6;
+
+  --color-line: #e6dccb;
+  --color-card: #fffdf8;
+
+  --shadow-pop: 6px 6px 0 0 var(--color-ink);
+  --shadow-pop-sm: 3px 3px 0 0 var(--color-ink);
+  --radius-xl: 1.4rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* subtle warm paper grain */
+    background-image:
+      radial-gradient(circle at 12% 18%, rgba(255, 90, 54, 0.06), transparent 42%),
+      radial-gradient(circle at 88% 8%, rgba(15, 174, 158, 0.07), transparent 40%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: var(--color-sun);
+    color: var(--color-ink);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 0.98;
+  }
+}
+
+/* ============================================================
+   Reusable component classes
+   ============================================================ */
+@layer components {
+  .wrap {
+    width: 100%;
+    max-width: 78rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+
+  .eyebrow {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-coral-deep);
+  }
+
+  /* Buttons -------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.8rem 1.4rem;
+    border-radius: 999px;
+    border: 2px solid var(--color-ink);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translate(2px, 2px); }
+
+  .btn-primary {
+    background: var(--color-coral);
+    color: #fff;
+    box-shadow: var(--shadow-pop-sm);
+  }
+  .btn-primary:hover {
+    box-shadow: 5px 5px 0 0 var(--color-ink);
+    transform: translate(-1px, -1px);
+  }
+
+  .btn-ink {
+    background: var(--color-ink);
+    color: var(--color-cream);
+    box-shadow: var(--shadow-pop-sm);
+  }
+  .btn-ink:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 0 var(--color-teal-deep); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-ink);
+  }
+  .btn-ghost:hover { background: var(--color-ink); color: var(--color-cream); }
+
+  .btn-sm { padding: 0.5rem 0.9rem; font-size: 0.85rem; }
+
+  /* Cards ---------------------------------------------------- */
+  .card {
+    background: var(--color-card);
+    border: 2px solid var(--color-ink);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-pop);
+  }
+  .card-flat {
+    background: var(--color-card);
+    border: 1.5px solid var(--color-line);
+    border-radius: var(--radius-xl);
+  }
+
+  /* Badges --------------------------------------------------- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--color-ink);
+  }
+  .badge-viral { background: var(--color-coral); color: #fff; }
+  .badge-nuevo { background: var(--color-teal); color: #fff; }
+  .badge-top   { background: var(--color-sun); color: var(--color-ink); }
+  .badge-soft  { background: var(--color-cream-2); color: var(--color-ink-soft); border-color: var(--color-line); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--color-ink);
+    background: var(--color-card);
+    transition: all 0.12s ease;
+    cursor: pointer;
+  }
+  .chip[data-active="true"] { background: var(--color-ink); color: var(--color-cream); }
+
+  .field {
+    width: 100%;
+    padding: 0.8rem 1rem;
+    border-radius: 0.9rem;
+    border: 2px solid var(--color-line);
+    background: #fff;
+    font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-ink);
+    box-shadow: 3px 3px 0 0 var(--color-sun);
+  }
+  .label { font-size: 0.8rem; font-weight: 700; color: var(--color-ink-soft); margin-bottom: 0.35rem; display: block; }
+}
+
+@layer utilities {
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  }
+  @keyframes reveal {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 28s linear infinite;
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  .text-balance { text-wrap: balance; }
+}

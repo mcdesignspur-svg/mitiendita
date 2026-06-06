@@ -1,0 +1,39 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# local data (MVP file store) & env
+/.data
+.env
+.env*.local
+
+# misc
+.DS_Store
+*.pem
+
+# macOS / exFAT junk (este proyecto vive en un volumen externo)
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+
+# drizzle migrations meta (usamos db:push)
+/drizzle
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# typescript
+*.tsbuildinfo
