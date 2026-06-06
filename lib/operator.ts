@@ -7,6 +7,7 @@
  *   npm run operator -- report
  *   npm run operator -- ingest research.json
  *   npm run operator -- outreach <supplierId> "Proyector LED Astronauta"
+ *   npm run operator -- alibaba "usb car charger"   (requiere ALIBABA_APP_KEY/SECRET)
  *
  * Sin DATABASE_URL escribe al file-store (.data/db.json); con DATABASE_URL, a
  * Neon. El playbook de operación (cómo investigar y contactar) vive en OPERATOR.md.
@@ -23,6 +24,7 @@ import {
 } from "./db";
 import { scoreFor } from "./sourcing";
 import { draftSupplierOutreach } from "./ai";
+import { alibabaEnabled, searchProducts } from "./alibaba";
 import type { SourcingCandidate, Supplier } from "./types";
 
 type CandidateInput = Partial<SourcingCandidate> & { name: string };
@@ -123,6 +125,34 @@ async function outreach(supplierId: string, productName?: string) {
   console.log("");
 }
 
+async function searchAlibaba(query: string) {
+  if (!query) {
+    console.error('❌ Falta el término. Ej: npm run operator -- alibaba "usb car charger"');
+    process.exit(1);
+  }
+  if (!alibabaEnabled()) {
+    console.error(
+      "❌ Falta ALIBABA_APP_KEY / ALIBABA_APP_SECRET en .env.\n" +
+        "   Crea una app en la Alibaba.com Open Platform, pega las llaves y reintenta.",
+    );
+    process.exit(1);
+  }
+  console.log(`🔎 Buscando en Alibaba ICBU: "${query}"…\n`);
+  const raw = await searchProducts(query);
+  if (!raw) {
+    console.error("❌ Sin respuesta de la API (revisa llaves, permisos y firma).");
+    process.exit(1);
+  }
+  if (raw.code && raw.code !== "0") {
+    console.error(`⚠️  La API respondió con error: code=${raw.code} ${raw.message ?? ""}\n`);
+  }
+  // Imprime el JSON crudo para ver el esquema real y afinar el mapeo a candidatos.
+  console.log(JSON.stringify(raw, null, 2));
+  console.log(
+    "\nℹ️  Respuesta cruda. Con este esquema afino el mapeo a SourcingCandidate y en la próxima corrida ingiero directo (createCandidate) con el sourceUrl real.",
+  );
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
@@ -135,9 +165,12 @@ async function main() {
     case "outreach":
       await outreach(rest[0], rest[1]);
       break;
+    case "alibaba":
+      await searchAlibaba(rest.join(" ").trim());
+      break;
     default:
       console.log(
-        "Comandos:\n  report                      resumen del pipeline y suplidores\n  ingest <file.json>          añade candidatos y/o suplidores\n  outreach <supplierId> [prod] redacta y guarda el mensaje de contacto",
+        'Comandos:\n  report                      resumen del pipeline y suplidores\n  ingest <file.json>          añade candidatos y/o suplidores\n  outreach <supplierId> [prod] redacta y guarda el mensaje de contacto\n  alibaba "<búsqueda>"        busca productos reales en Alibaba ICBU (requiere llaves)',
       );
   }
   process.exit(0);
