@@ -8,12 +8,9 @@ import {
 } from "@/lib/db";
 import { scoreFor } from "@/lib/sourcing";
 import { aiEnabled } from "@/lib/ai";
-import { money, pct } from "@/lib/format";
+import { money } from "@/lib/format";
 import {
   discoverCandidatesAction,
-  setCandidateStageAction,
-  deleteCandidateAction,
-  promoteCandidateAction,
   createSupplierAction,
   setSupplierStatusAction,
   deleteSupplierAction,
@@ -21,18 +18,11 @@ import {
 } from "@/lib/actions";
 import { CopyStudio } from "@/components/copy-studio";
 import { VerificationCopilot } from "@/components/verification-copilot";
-import type { SourcingCandidate, Supplier } from "@/lib/types";
+import { SourcingPipeline } from "@/components/sourcing-pipeline";
+import type { Supplier } from "@/lib/types";
 
 export const metadata = { title: "Panel de operación — Mi Tiendita PR" };
 
-const STAGE_COLOR: Record<string, string> = {
-  Detectado: "var(--color-muted)",
-  Evaluando: "var(--color-grape)",
-  Negociando: "var(--color-coral)",
-  Ordenado: "var(--color-teal-deep)",
-  Descartado: "var(--color-ink-soft)",
-};
-const STAGES = ["Detectado", "Evaluando", "Negociando", "Ordenado", "Descartado"];
 const SUPPLIER_STATUSES = ["nuevo", "contactado", "cotizando", "muestra", "aprobado", "descartado"];
 
 export default async function AdminPage() {
@@ -125,17 +115,7 @@ export default async function AdminPage() {
           <button className="btn btn-primary">✨ Descubrir candidatos</button>
         </form>
 
-        {candidates.length === 0 ? (
-          <p style={{ color: "var(--color-muted)" }}>
-            Aún no hay candidatos. Usa “Descubrir” o corre <code>npm run operator -- ingest</code>.
-          </p>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {candidates.map((c) => (
-              <CandidateCard key={c.id} c={c} />
-            ))}
-          </div>
-        )}
+        <SourcingPipeline candidates={candidates} />
       </Section>
 
       {/* suppliers */}
@@ -197,74 +177,6 @@ export default async function AdminPage() {
           </div>
         )}
       </Section>
-    </div>
-  );
-}
-
-function CandidateCard({ c }: { c: SourcingCandidate & { score: number } }) {
-  const margin = c.estRetail > 0 ? (c.estRetail - c.unitCost) / c.estRetail : 0;
-  return (
-    <div className="card p-5">
-      <div className="flex items-start justify-between mb-3">
-        <span className="text-3xl">{c.emoji}</span>
-        <div className="flex flex-col items-end gap-1">
-          <span className="badge" style={{ background: STAGE_COLOR[c.stage], color: "#fff", borderColor: "var(--color-ink)" }}>
-            {c.stage}
-          </span>
-          {(c.origin === "agente" || c.origin === "app") && (
-            <span className="text-[10px] font-semibold" style={{ color: "var(--color-grape)" }}>🤖 agente</span>
-          )}
-        </div>
-      </div>
-      <h3 className="font-display text-lg leading-tight mb-1">{c.name}</h3>
-      <p className="text-xs mb-3" style={{ color: "var(--color-muted)" }}>{c.supplier || "sin suplidor"}</p>
-
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--color-cream-2)" }}>
-          <div className="h-full rounded-full" style={{ width: `${c.score}%`, background: c.score > 70 ? "var(--color-teal)" : "var(--color-sun)" }} />
-        </div>
-        <span className="font-display text-lg tabular-nums">{c.score}</span>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <Mini label="Costo" value={money(c.unitCost)} />
-        <Mini label="Retail" value={money(c.estRetail)} />
-        <Mini label="Margen" value={pct(margin)} />
-      </div>
-      <p className="text-xs mt-3 font-semibold" style={{ color: "var(--color-teal-deep)" }}>📈 {c.signal}</p>
-      {c.sourceUrl && (
-        <a
-          href={c.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-semibold inline-flex items-center gap-1 mt-2 hover:underline"
-          style={{ color: "var(--color-grape)" }}
-        >
-          🔗 Ver en Alibaba
-        </a>
-      )}
-
-      <div className="flex flex-wrap gap-2 mt-4 items-center">
-        {c.productId ? (
-          <Link href={`/admin/productos/${c.productId}`} className="btn btn-ghost btn-sm">Ver producto →</Link>
-        ) : (
-          <form action={promoteCandidateAction}>
-            <input type="hidden" name="cid" value={c.id} />
-            <button className="btn btn-primary btn-sm">→ Crear producto</button>
-          </form>
-        )}
-        <form action={setCandidateStageAction} className="flex items-center gap-1">
-          <input type="hidden" name="cid" value={c.id} />
-          <select name="stage" defaultValue={c.stage} className="field text-xs w-auto" style={{ padding: "6px 8px" }}>
-            {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <button className="btn btn-ghost btn-sm" title="Cambiar etapa">✓</button>
-        </form>
-        <form action={deleteCandidateAction}>
-          <input type="hidden" name="cid" value={c.id} />
-          <button className="btn btn-ghost btn-sm" title="Eliminar" style={{ color: "var(--color-coral-deep)" }}>✕</button>
-        </form>
-      </div>
     </div>
   );
 }
@@ -342,15 +254,6 @@ function Metric({ value, label, accent, href }: { value: string; label: string; 
     <Link href={href} className="card p-5 block hover:-translate-y-0.5 transition-transform">{inner}</Link>
   ) : (
     <div className="card p-5">{inner}</div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg py-1.5" style={{ background: "var(--color-cream-2)" }}>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>{label}</div>
-      <div className="font-bold text-sm">{value}</div>
-    </div>
   );
 }
 
