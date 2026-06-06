@@ -464,6 +464,6 @@ function keywordAssistant(input: { message: string; catalog: AssistantProduct[] 
   const slugs = scored.map((x) => x.p.slug);
   const reply = slugs.length
     ? "Mira lo que tenemos que te puede servir 👇"
-    : "Cuéntame un poco más de lo que buscas (para el carro, la casa, tecnología, salud…) y te recomiendo algo del catálogo.";
+    : "Cuéntame un poco más de lo que buscas (para el carro, la casa, tecnología, conveniencia…) y te recomiendo algo del catálogo.";
   return { source: "busqueda", reply, productSlugs: slugs };
 }

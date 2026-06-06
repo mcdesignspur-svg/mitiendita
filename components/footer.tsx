@@ -25,7 +25,7 @@ export function Footer() {
           links={[
             { href: "/productos", label: "Catálogo completo" },
             { href: "/productos?cat=Auto%20%26%20Gasolinera", label: "Auto & Gasolinera" },
-            { href: "/productos?cat=Salud%20%26%20Farmacia", label: "Salud & Farmacia" },
+            { href: "/productos?cat=Impulso%20%26%20Conveniencia", label: "Impulso & Conveniencia" },
             { href: "/carrito", label: "Mi carrito" },
           ]}
         />

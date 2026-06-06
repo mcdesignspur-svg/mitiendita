@@ -3,7 +3,7 @@ import { listProducts } from "@/lib/db";
 import { getSessionBusiness } from "@/lib/auth";
 import { ProductCard } from "@/components/product-card";
 
-const HERO_TILES = ["🛞", "🎧", "🔋", "🌀", "🫙", "💆", "🌈", "📍", "⚡"];
+const HERO_TILES = ["🛞", "🎧", "🔋", "🌀", "🫙", "🔦", "🌈", "📍", "⚡"];
 
 const SEGMENTS = [
   {
@@ -21,7 +21,7 @@ const SEGMENTS = [
   {
     icon: "💊",
     title: "Farmacias",
-    desc: "Bienestar, belleza y salud de alta rotación y buen margen.",
+    desc: "Conveniencia e impulso: cargadores, cables, linternas y gadgets de alta rotación.",
     color: "var(--color-teal)",
   },
   {
@@ -129,7 +129,7 @@ export default async function HomePage() {
                   "Cargadores",
                   "Audífonos TWS",
                   "Gadgets de auto",
-                  "Belleza & bienestar",
+                  "Conveniencia & impulso",
                   "Hogar viral",
                   "Power banks",
                   "Accesorios virales",
