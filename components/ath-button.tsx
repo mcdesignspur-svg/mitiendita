@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface AthOrder {
@@ -22,6 +22,7 @@ export function AthButton({
   phone: string;
 }) {
   const router = useRouter();
+  const [fallback, setFallback] = useState(false);
 
   useEffect(() => {
     const w = window as any;
@@ -66,34 +67,58 @@ export function AthButton({
       }
       router.push(`/carrito/gracias?o=${order.id}`);
     };
-
     w.cancelATHM = async function () {
-      try {
-        await w.findPaymentATHM();
-      } catch {
-        /* ignore */
-      }
+      try { await w.findPaymentATHM(); } catch { /* ignore */ }
       router.push(`/carrito?ath=cancelado`);
     };
-
     w.expiredATHM = async function () {
-      try {
-        await w.findPaymentATHM();
-      } catch {
-        /* ignore */
-      }
+      try { await w.findPaymentATHM(); } catch { /* ignore */ }
       router.push(`/carrito?ath=expirado`);
     };
 
-    const script = document.createElement("script");
-    script.src = "https://payments.athmovil.com/api/modal/js/athmovil_base.js";
-    script.async = true;
-    document.body.appendChild(script);
+    // La librería de ATH Móvil renderiza el botón en el evento load/DOMContentLoaded.
+    // Como inyectamos el script tras la navegación SPA (ese evento ya ocurrió),
+    // re-disparamos los eventos para que su inicializador corra.
+    function triggerInit() {
+      try { document.dispatchEvent(new Event("DOMContentLoaded")); } catch { /* */ }
+      try { window.dispatchEvent(new Event("load")); } catch { /* */ }
+    }
 
-    return () => {
-      script.remove();
-    };
+    const SRC = "https://payments.athmovil.com/api/modal/js/athmovil_base.js";
+    const existing = document.getElementById("athmovil-base") as HTMLScriptElement | null;
+    if (existing) {
+      triggerInit();
+    } else {
+      const script = document.createElement("script");
+      script.id = "athmovil-base";
+      script.src = SRC;
+      script.async = true;
+      script.onload = triggerInit;
+      document.body.appendChild(script);
+    }
+
+    // Si el botón no aparece (cuenta pendiente de verificación), mostramos aviso.
+    const t = setTimeout(() => {
+      const el = document.getElementById("ATHMovil_Checkout_Button_payment");
+      if (!el || el.childElementCount === 0) setFallback(true);
+    }, 6000);
+
+    return () => clearTimeout(t);
   }, [order, publicToken, phone, router]);
 
-  return <div id="ATHMovil_Checkout_Button_payment" className="flex justify-center" />;
+  return (
+    <>
+      <div id="ATHMovil_Checkout_Button_payment" className="flex justify-center min-h-[3.5rem]" />
+      {fallback && (
+        <p
+          className="text-sm mt-4 rounded-xl px-4 py-3 text-left"
+          style={{ background: "#fff7e6", color: "#a06b00", border: "1.5px solid #ffd98a" }}
+        >
+          ⏳ El botón de ATH Móvil aparecerá cuando tu cuenta <strong>ATH Móvil Business</strong> esté
+          verificada y activa. Por ahora está <strong>pendiente de verificación</strong> por Evertec —
+          mientras tanto puedes pagar con <strong>tarjeta</strong>.
+        </p>
+      )}
+    </>
+  );
 }
