@@ -73,7 +73,7 @@ export function AthButton({
       } catch {
         /* ignore */
       }
-      router.push(`/carrito/gracias?o=${order.id}`);
+      router.push(`/carrito?ath=cancelado`);
     };
 
     w.expiredATHM = async function () {
@@ -82,7 +82,7 @@ export function AthButton({
       } catch {
         /* ignore */
       }
-      router.push(`/carrito/gracias?o=${order.id}`);
+      router.push(`/carrito?ath=expirado`);
     };
 
     const script = document.createElement("script");

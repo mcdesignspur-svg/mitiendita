@@ -46,6 +46,100 @@ export async function confirmAthPayment(opts: {
   return { ok: true };
 }
 
+// ===========================================================================
+// API REST de ATH Móvil (https://github.com/evertec/ATHM-Payment-Button-API)
+// Flujo: /payment (crea) → cliente confirma (CONFIRM) → /authorization (captura
+// = COMPLETED) → /findPayment (verifica). El auth_token (JWT) de /payment se usa
+// como Bearer en /authorization y /findPayment.
+// ===========================================================================
+const ATHM_API = "https://payments.athmovil.com/api/business-transaction/ecommerce";
+
+export interface AthPaymentResult {
+  ecommerceId: string;
+  authToken: string;
+}
+
+/** Paso 1: crea la transacción (server-driven). Devuelve ecommerceId + auth_token. */
+export async function athCreatePayment(input: {
+  total: number;
+  subtotal?: number;
+  tax?: number;
+  metadata1: string;
+  metadata2?: string;
+  items: { name: string; description?: string; quantity: number; price: number }[];
+  timeout?: number;
+}): Promise<AthPaymentResult> {
+  const { publicToken, phone } = athConfig();
+  const res = await fetch(`${ATHM_API}/payment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      env: "production",
+      publicToken,
+      timeout: String(input.timeout ?? 600),
+      total: input.total.toFixed(2),
+      tax: (input.tax ?? 0).toFixed(2),
+      subtotal: (input.subtotal ?? input.total).toFixed(2),
+      metadata1: input.metadata1.slice(0, 40),
+      metadata2: (input.metadata2 ?? "").slice(0, 40),
+      items: input.items.map((it) => ({
+        name: it.name.slice(0, 60),
+        description: it.description ?? "",
+        quantity: String(it.quantity),
+        price: it.price.toFixed(2),
+        tax: null,
+        metadata: null,
+      })),
+      phoneNumber: phone,
+    }),
+  });
+  const json = await res.json();
+  if (json?.status !== "success") {
+    throw new Error(json?.errorMessage || "ATH /payment falló");
+  }
+  return { ecommerceId: json.data.ecommerceId, authToken: json.data.auth_token };
+}
+
+type AthTxn = {
+  ecommerceStatus?: "OPEN" | "CONFIRM" | "COMPLETED" | "CANCEL";
+  ecommerceId?: string;
+  referenceNumber?: string;
+  total?: number;
+};
+
+/** Verifica el estado real de la transacción con ATH (fuente de verdad). */
+export async function athFindPayment(ecommerceId: string, authToken: string): Promise<AthTxn> {
+  const { publicToken } = athConfig();
+  const res = await fetch(`${ATHM_API}/business/findPayment`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ ecommerceId, publicToken }),
+  });
+  const json = await res.json();
+  return (json?.data ?? {}) as AthTxn;
+}
+
+/** Paso 3: captura/completa la transacción (server-side). Requiere el auth_token. */
+export async function athAuthorize(authToken: string): Promise<AthTxn> {
+  const res = await fetch(`${ATHM_API}/authorization`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+  });
+  const json = await res.json();
+  if (json?.status !== "success") {
+    throw new Error(json?.errorMessage || "ATH /authorization falló");
+  }
+  return json.data as AthTxn;
+}
+
 /** Suscribe (una sola vez) la URL del webhook con ATH Móvil. */
 export async function subscribeAthWebhook(listenerURL: string) {
   const { publicToken, privateToken } = athConfig();
