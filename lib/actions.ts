@@ -2,9 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { getStripe, stripeEnabled } from "./stripe";
 import {
   createBusiness,
   createOrder,
+  updateOrder,
   createProduct,
   deleteProduct,
   getBusinessByEmail,
@@ -193,6 +196,82 @@ export async function checkoutAction(
   const shipping = Math.max(0, Number(formData.get("shipping")) || 0);
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const total = subtotal + shipping;
+
+  // --- B2B: queda como factura (net 15/30), sin cobro con tarjeta ---
+  if (kind === "b2b") {
+    const order = await createOrder({
+      kind,
+      businessId,
+      customerName,
+      email,
+      items,
+      shipping,
+      total,
+      paymentStatus: "factura_pendiente",
+      paymentMethod: "factura",
+    });
+    await notifyOrderConfirmation(order).catch(() => {});
+    redirect(`/carrito/gracias?o=${order.id}`);
+  }
+
+  // --- B2C con Stripe: cobro real con tarjeta ---
+  if (stripeEnabled()) {
+    const order = await createOrder({
+      kind,
+      businessId,
+      customerName,
+      email,
+      items,
+      shipping,
+      total,
+      paymentStatus: "pendiente_pago",
+      paymentMethod: "stripe",
+    });
+
+    const h = await headers();
+    const host = h.get("host") || "localhost:3000";
+    const proto = h.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
+    const origin = `${proto}://${host}`;
+
+    let url: string | null = null;
+    try {
+      const session = await getStripe().checkout.sessions.create({
+        mode: "payment",
+        customer_email: email,
+        line_items: items.map((it) => ({
+          price_data: {
+            currency: "usd",
+            product_data: { name: it.name },
+            unit_amount: Math.round(it.unitPrice * 100),
+          },
+          quantity: it.qty,
+        })),
+        shipping_options:
+          shipping > 0
+            ? [
+                {
+                  shipping_rate_data: {
+                    type: "fixed_amount",
+                    fixed_amount: { amount: Math.round(shipping * 100), currency: "usd" },
+                    display_name: "Envío",
+                  },
+                },
+              ]
+            : undefined,
+        metadata: { orderId: order.id },
+        success_url: `${origin}/carrito/gracias?o=${order.id}`,
+        cancel_url: `${origin}/carrito`,
+      });
+      await updateOrder(order.id, { stripeSessionId: session.id });
+      url = session.url;
+    } catch {
+      return { error: "No se pudo iniciar el pago. Intenta de nuevo." };
+    }
+    if (!url) return { error: "No se pudo iniciar el pago." };
+    redirect(url);
+  }
+
+  // --- Fallback sin Stripe (demo): registra la orden y muestra confirmación ---
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
   await notifyOrderConfirmation(order).catch(() => {});
   redirect(`/carrito/gracias?o=${order.id}`);

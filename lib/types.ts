@@ -87,6 +87,12 @@ export interface Order {
   /** Total = subtotal de items + envío. */
   total: number;
   status: "nuevo" | "procesando" | "enviado";
+  /** Estado de pago. B2C paga con tarjeta (Stripe); B2B queda como factura. */
+  paymentStatus?: "pendiente_pago" | "pagada" | "factura_pendiente" | "fallida";
+  /** Método: "stripe" (tarjeta) o "factura" (B2B net 15/30). */
+  paymentMethod?: "stripe" | "factura";
+  /** Id de la sesión de Stripe Checkout (para reconciliar el pago). */
+  stripeSessionId?: string;
   createdAt: string;
 }
 

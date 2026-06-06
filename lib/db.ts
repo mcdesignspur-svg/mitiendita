@@ -26,6 +26,7 @@ export const setBusinessStatus: typeof pg.setBusinessStatus = impl.setBusinessSt
 export const listOrders: typeof pg.listOrders = impl.listOrders;
 export const getOrderById: typeof pg.getOrderById = impl.getOrderById;
 export const createOrder: typeof pg.createOrder = impl.createOrder;
+export const updateOrder: typeof pg.updateOrder = impl.updateOrder;
 
 // Products
 export const listProducts: typeof pg.listProducts = impl.listProducts;

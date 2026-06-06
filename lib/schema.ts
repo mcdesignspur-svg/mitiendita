@@ -61,6 +61,9 @@ export const orders = pgTable("orders", {
   shipping: doublePrecision("shipping").notNull().default(0),
   total: doublePrecision("total").notNull().default(0),
   status: text("status").notNull().default("nuevo"),
+  paymentStatus: text("payment_status"),
+  paymentMethod: text("payment_method"),
+  stripeSessionId: text("stripe_session_id"),
   createdAt: text("created_at").notNull(),
 });
 

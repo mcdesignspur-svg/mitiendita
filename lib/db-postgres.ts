@@ -89,6 +89,9 @@ function toOrder(r: OrderRow): Order {
     shipping: r.shipping,
     total: r.total,
     status: r.status as Order["status"],
+    paymentStatus: (r.paymentStatus as Order["paymentStatus"]) ?? undefined,
+    paymentMethod: (r.paymentMethod as Order["paymentMethod"]) ?? undefined,
+    stripeSessionId: r.stripeSessionId ?? undefined,
     createdAt: r.createdAt,
   };
 }
@@ -160,6 +163,14 @@ export async function createOrder(
   };
   await getDb().insert(orders).values(order);
   return order;
+}
+
+export async function updateOrder(
+  oid: string,
+  patch: Partial<Order>,
+): Promise<Order | undefined> {
+  const rows = await getDb().update(orders).set(patch).where(eq(orders.id, oid)).returning();
+  return rows[0] ? toOrder(rows[0]) : undefined;
 }
 
 // --- Products ---------------------------------------------------

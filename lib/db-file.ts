@@ -192,6 +192,18 @@ export async function createOrder(
   return order;
 }
 
+export async function updateOrder(
+  oid: string,
+  patch: Partial<Order>,
+): Promise<Order | undefined> {
+  const db = read();
+  const o = db.orders.find((x) => x.id === oid);
+  if (!o) return undefined;
+  Object.assign(o, patch);
+  write(db);
+  return o;
+}
+
 // --- Products ---------------------------------------------------
 export async function listProducts(opts: { activeOnly?: boolean } = {}): Promise<Product[]> {
   const all = read().products;

@@ -120,10 +120,16 @@ export function CartView({
         )}
 
         <button type="submit" disabled={pending} className="btn btn-primary w-full">
-          {pending ? "Procesando…" : "Confirmar pedido →"}
+          {pending
+            ? "Procesando…"
+            : kind === "b2b"
+              ? "Confirmar pedido (factura) →"
+              : "Pagar con tarjeta →"}
         </button>
         <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
-          Demo: el pedido se registra en el panel de operación. El pago se integra en producción.
+          {kind === "b2b"
+            ? "Pedido mayorista: te enviamos la factura con términos (net 15/30)."
+            : "Pago seguro con Stripe. Aceptamos tarjeta, Apple Pay y Google Pay."}
         </p>
       </form>
     </div>
