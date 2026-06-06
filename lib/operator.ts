@@ -11,6 +11,7 @@
  * Sin DATABASE_URL escribe al file-store (.data/db.json); con DATABASE_URL, a
  * Neon. El playbook de operación (cómo investigar y contactar) vive en OPERATOR.md.
  */
+import "./load-env"; // DEBE ir primero: carga .env antes de evaluar lib/db.
 import fs from "node:fs";
 import {
   createCandidate,
@@ -23,14 +24,6 @@ import {
 import { scoreFor } from "./sourcing";
 import { draftSupplierOutreach } from "./ai";
 import type { SourcingCandidate, Supplier } from "./types";
-
-function loadEnv() {
-  try {
-    process.loadEnvFile(".env");
-  } catch {
-    /* sin .env: usa file-store */
-  }
-}
 
 type CandidateInput = Partial<SourcingCandidate> & { name: string };
 type SupplierInput = Partial<Supplier> & { name: string };
@@ -131,7 +124,6 @@ async function outreach(supplierId: string, productName?: string) {
 }
 
 async function main() {
-  loadEnv();
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
     case "ingest":

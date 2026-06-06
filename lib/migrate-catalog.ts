@@ -12,19 +12,14 @@
  *
  * Requiere DATABASE_URL. Sin él aborta (no toca el file-store local).
  */
-import { getProductById, updateProduct } from "./db";
+import "./load-env"; // DEBE ir primero: carga .env antes de evaluar lib/db.
 import { SEED_PRODUCTS } from "./products";
+import { getProductById, updateProduct } from "./db";
 
 // Los 4 ids que cambiaron de salud/belleza → conveniencia/impulso.
 const IDS = ["p-006", "p-007", "p-008", "p-014"];
 
 async function main() {
-  try {
-    process.loadEnvFile(".env");
-  } catch {
-    /* sin .env */
-  }
-
   if (!process.env.DATABASE_URL) {
     console.error(
       "❌ Falta DATABASE_URL en .env. Esta migración es para la base de producción (Neon).\n" +
