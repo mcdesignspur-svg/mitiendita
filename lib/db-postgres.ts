@@ -92,6 +92,7 @@ function toOrder(r: OrderRow): Order {
     paymentStatus: (r.paymentStatus as Order["paymentStatus"]) ?? undefined,
     paymentMethod: (r.paymentMethod as Order["paymentMethod"]) ?? undefined,
     stripeSessionId: r.stripeSessionId ?? undefined,
+    paymentRef: r.paymentRef ?? undefined,
     createdAt: r.createdAt,
   };
 }

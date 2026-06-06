@@ -4,51 +4,63 @@
  * - Si hay DATABASE_URL  → usa Postgres/Neon (lib/db-postgres.ts).
  * - Si NO hay DATABASE_URL → usa el archivo local (lib/db-file.ts).
  *
- * Ambos adaptadores exponen exactamente el mismo contrato async, así que el
- * resto de la app (páginas, acciones, auth) no cambia al migrar de uno a otro.
+ * IMPORTANTE: el adaptador se resuelve en CADA llamada (no al cargar el módulo).
+ * Si se fijara al cargar, una ruta que importe este módulo antes de que
+ * DATABASE_URL esté disponible se quedaría con el adaptador equivocado.
+ * Ambos adaptadores exponen el mismo contrato async.
  */
 import * as file from "./db-file";
 import * as pg from "./db-postgres";
 
-const impl = process.env.DATABASE_URL ? pg : file;
+function impl() {
+  return process.env.DATABASE_URL ? pg : file;
+}
 
 /** True cuando la app está usando Postgres/Neon. */
-export const usingPostgres = Boolean(process.env.DATABASE_URL);
+export function usingPostgres(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+function bind<K extends keyof typeof pg & keyof typeof file>(k: K): (typeof pg)[K] {
+  const fn = (...args: unknown[]) =>
+    (impl()[k] as unknown as (...a: unknown[]) => unknown)(...args);
+  return fn as unknown as (typeof pg)[K];
+}
 
 // Businesses
-export const listBusinesses: typeof pg.listBusinesses = impl.listBusinesses;
-export const getBusinessById: typeof pg.getBusinessById = impl.getBusinessById;
-export const getBusinessByEmail: typeof pg.getBusinessByEmail = impl.getBusinessByEmail;
-export const createBusiness: typeof pg.createBusiness = impl.createBusiness;
-export const setBusinessStatus: typeof pg.setBusinessStatus = impl.setBusinessStatus;
+export const listBusinesses = bind("listBusinesses");
+export const getBusinessById = bind("getBusinessById");
+export const getBusinessByEmail = bind("getBusinessByEmail");
+export const createBusiness = bind("createBusiness");
+export const setBusinessStatus = bind("setBusinessStatus");
 
 // Orders
-export const listOrders: typeof pg.listOrders = impl.listOrders;
-export const getOrderById: typeof pg.getOrderById = impl.getOrderById;
-export const createOrder: typeof pg.createOrder = impl.createOrder;
-export const updateOrder: typeof pg.updateOrder = impl.updateOrder;
+export const listOrders = bind("listOrders");
+export const getOrderById = bind("getOrderById");
+export const createOrder = bind("createOrder");
+export const updateOrder = bind("updateOrder");
 
 // Products
-export const listProducts: typeof pg.listProducts = impl.listProducts;
-export const getProductBySlug: typeof pg.getProductBySlug = impl.getProductBySlug;
-export const getProductById: typeof pg.getProductById = impl.getProductById;
-export const createProduct: typeof pg.createProduct = impl.createProduct;
-export const updateProduct: typeof pg.updateProduct = impl.updateProduct;
-export const deleteProduct: typeof pg.deleteProduct = impl.deleteProduct;
-export const relatedProducts: typeof pg.relatedProducts = impl.relatedProducts;
-export const listCategories: typeof pg.listCategories = impl.listCategories;
-export const listCollections: typeof pg.listCollections = impl.listCollections;
+export const listProducts = bind("listProducts");
+export const getProductBySlug = bind("getProductBySlug");
+export const getProductById = bind("getProductById");
+export const createProduct = bind("createProduct");
+export const updateProduct = bind("updateProduct");
+export const deleteProduct = bind("deleteProduct");
+export const relatedProducts = bind("relatedProducts");
+export const listCategories = bind("listCategories");
+export const listCollections = bind("listCollections");
 
 // Sourcing candidates (columna operativa)
-export const listCandidates: typeof pg.listCandidates = impl.listCandidates;
-export const getCandidateById: typeof pg.getCandidateById = impl.getCandidateById;
-export const createCandidate: typeof pg.createCandidate = impl.createCandidate;
-export const updateCandidate: typeof pg.updateCandidate = impl.updateCandidate;
-export const deleteCandidate: typeof pg.deleteCandidate = impl.deleteCandidate;
+export const listCandidates = bind("listCandidates");
+export const getCandidateById = bind("getCandidateById");
+export const createCandidate = bind("createCandidate");
+export const updateCandidate = bind("updateCandidate");
+export const deleteCandidate = bind("deleteCandidate");
 
 // Suppliers (columna operativa)
-export const listSuppliers: typeof pg.listSuppliers = impl.listSuppliers;
-export const getSupplierById: typeof pg.getSupplierById = impl.getSupplierById;
-export const createSupplier: typeof pg.createSupplier = impl.createSupplier;
-export const updateSupplier: typeof pg.updateSupplier = impl.updateSupplier;
-export const deleteSupplier: typeof pg.deleteSupplier = impl.deleteSupplier;
+export const listSuppliers = bind("listSuppliers");
+export const getSupplierById = bind("getSupplierById");
+export const createSupplier = bind("createSupplier");
+export const updateSupplier = bind("updateSupplier");
+export const deleteSupplier = bind("deleteSupplier");

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getStripe, stripeEnabled } from "./stripe";
+import { athEnabled } from "./athmovil";
 import {
   createBusiness,
   createOrder,
@@ -212,6 +213,24 @@ export async function checkoutAction(
     });
     await notifyOrderConfirmation(order).catch(() => {});
     redirect(`/carrito/gracias?o=${order.id}`);
+  }
+
+  const method = String(formData.get("method") || "");
+
+  // --- B2C con ATH Móvil: crea la orden y manda a la página del botón ---
+  if (method === "ath" && athEnabled()) {
+    const order = await createOrder({
+      kind,
+      businessId,
+      customerName,
+      email,
+      items,
+      shipping,
+      total,
+      paymentStatus: "pendiente_pago",
+      paymentMethod: "ath_movil",
+    });
+    redirect(`/carrito/ath?o=${order.id}`);
   }
 
   // --- B2C con Stripe: cobro real con tarjeta ---

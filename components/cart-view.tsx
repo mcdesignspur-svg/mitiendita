@@ -30,6 +30,8 @@ export function CartView({
   // Envío del pedido = el más alto entre los productos del carrito.
   const shipping = lines.reduce((m, l) => Math.max(m, l.shippingPrice || 0), 0);
   const total = subtotal + shipping;
+  const athAvailable =
+    kind === "b2c" && total > 0 && total <= 1500 && !!process.env.NEXT_PUBLIC_ATHM_PUBLIC_TOKEN;
 
   if (lines.length === 0) {
     return (
@@ -119,17 +121,33 @@ export function CartView({
           </p>
         )}
 
-        <button type="submit" disabled={pending} className="btn btn-primary w-full">
+        <button type="submit" name="method" value="stripe" disabled={pending} className="btn btn-primary w-full">
           {pending
             ? "Procesando…"
             : kind === "b2b"
               ? "Confirmar pedido (factura) →"
               : "Pagar con tarjeta →"}
         </button>
+
+        {athAvailable && (
+          <button
+            type="submit"
+            name="method"
+            value="ath"
+            disabled={pending}
+            className="btn w-full mt-2"
+            style={{ background: "#ff6a00", color: "#fff", borderColor: "var(--color-ink)", boxShadow: "var(--shadow-pop-sm)" }}
+          >
+            🇵🇷 Pagar con ATH Móvil
+          </button>
+        )}
+
         <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
           {kind === "b2b"
             ? "Pedido mayorista: te enviamos la factura con términos (net 15/30)."
-            : "Pago seguro con Stripe. Aceptamos tarjeta, Apple Pay y Google Pay."}
+            : athAvailable
+              ? "Pago seguro: tarjeta y Apple/Google Pay (Stripe), o ATH Móvil."
+              : "Pago seguro con Stripe. Aceptamos tarjeta, Apple Pay y Google Pay."}
         </p>
       </form>
     </div>

@@ -89,10 +89,12 @@ export interface Order {
   status: "nuevo" | "procesando" | "enviado";
   /** Estado de pago. B2C paga con tarjeta (Stripe); B2B queda como factura. */
   paymentStatus?: "pendiente_pago" | "pagada" | "factura_pendiente" | "fallida";
-  /** Método: "stripe" (tarjeta) o "factura" (B2B net 15/30). */
-  paymentMethod?: "stripe" | "factura";
+  /** Método: tarjeta (Stripe), ATH Móvil, o factura (B2B net 15/30). */
+  paymentMethod?: "stripe" | "ath_movil" | "factura";
   /** Id de la sesión de Stripe Checkout (para reconciliar el pago). */
   stripeSessionId?: string;
+  /** Referencia del pago (Stripe session / referencia ATH Móvil). */
+  paymentRef?: string;
   createdAt: string;
 }
 

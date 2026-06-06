@@ -64,6 +64,7 @@ export const orders = pgTable("orders", {
   paymentStatus: text("payment_status"),
   paymentMethod: text("payment_method"),
   stripeSessionId: text("stripe_session_id"),
+  paymentRef: text("payment_ref"),
   createdAt: text("created_at").notNull(),
 });
 
