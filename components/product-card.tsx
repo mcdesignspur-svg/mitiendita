@@ -40,14 +40,20 @@ export function ProductCard({
   return (
     <div className="card overflow-hidden flex flex-col group">
       <Link href={`/productos/${product.slug}`} className="block">
-        <div
-          className="relative aspect-[4/3] grid place-items-center text-6xl"
-          style={{ background: product.gradient }}
-        >
-          <span className="drop-shadow-lg transition-transform duration-300 group-hover:scale-110">
-            {product.emoji}
-          </span>
-          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+        <div className="relative aspect-[4/3] overflow-hidden" style={{ background: product.gradient }}>
+          {product.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <span className="absolute inset-0 grid place-items-center text-6xl drop-shadow-lg transition-transform duration-300 group-hover:scale-110">
+              {product.emoji}
+            </span>
+          )}
+          <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-1.5">
             {product.badges.map((b) => (
               <span key={b} className={`badge badge-${b}`}>
                 {b === "viral" ? "🔥 Viral" : b === "nuevo" ? "Nuevo" : "★ Top"}
@@ -56,7 +62,7 @@ export function ProductCard({
           </div>
           {showDiscount && (
             <span
-              className="absolute top-3 right-3 badge"
+              className="absolute top-3 right-3 z-10 badge"
               style={{ background: "var(--color-grape)", color: "#fff" }}
             >
               −{product.discountPercent}%

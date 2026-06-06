@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import type { Product } from "@/lib/types";
+import type { Product, Badge, Segment } from "@/lib/types";
 import { money } from "@/lib/format";
 import {
   GRADIENT_PRESETS,
@@ -14,8 +14,10 @@ import {
 import {
   createProductAction,
   updateProductAction,
+  aiProductDraftAction,
   type FormState,
 } from "@/lib/actions";
+import { ImageEditor } from "./image-editor";
 
 export function ProductForm({
   mode,
@@ -31,19 +33,106 @@ export function ProductForm({
   const action = mode === "edit" ? updateProductAction : createProductAction;
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, {});
 
+  // Campos controlados (los que el autocompletar AI puede rellenar).
   const [name, setName] = useState(product?.name ?? "");
   const [emoji, setEmoji] = useState(product?.emoji ?? "📦");
   const [gradient, setGradient] = useState(product?.gradient ?? GRADIENT_PRESETS[0]);
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [tagline, setTagline] = useState(product?.tagline ?? "");
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [category, setCategory] = useState(product?.category ?? "");
+  const [collection, setCollection] = useState(product?.collection ?? "");
+  const [tags, setTags] = useState(product?.tags.join(", ") ?? "");
+  const [badges, setBadges] = useState<Badge[]>(product?.badges ?? []);
+  const [segments, setSegments] = useState<Segment[]>(product?.segments ?? []);
   const [retail, setRetail] = useState(product?.retail ?? 0);
+  const [wholesale, setWholesale] = useState(product?.wholesale ?? 0);
+  const [moq, setMoq] = useState(product?.moq ?? 1);
+  const [unitsPerCase, setUnitsPerCase] = useState(product?.unitsPerCase ?? 1);
+  const [shippingPrice, setShippingPrice] = useState(product?.shippingPrice ?? 0);
+  const [landedCost, setLandedCost] = useState(product?.landedCost ?? 0);
+  const [sourceUrl, setSourceUrl] = useState(product?.sourceUrl ?? "");
   const [discount, setDiscount] = useState(product?.discountPercent ?? 0);
+
+  // Estado del autocompletar AI.
+  const [aiPending, setAiPending] = useState(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
 
   const catOptions = Array.from(new Set([...categories, ...DEFAULT_CATEGORIES]));
   const colOptions = Array.from(new Set([...collections, ...DEFAULT_COLLECTIONS]));
   const previewPrice = discount > 0 ? Math.round(retail * (1 - discount / 100) * 100) / 100 : retail;
 
+  function toggle<T>(list: T[], value: T): T[] {
+    return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+  }
+
+  async function autofill() {
+    if (!name.trim()) {
+      setAiMsg("Escribe el nombre del producto primero.");
+      return;
+    }
+    setAiPending(true);
+    setAiMsg(null);
+    try {
+      const res = await aiProductDraftAction({
+        name,
+        landedCost: landedCost || undefined,
+        category: category || undefined,
+        sourceUrl: sourceUrl || undefined,
+      });
+      if (res.error || !res.draft) {
+        setAiMsg(res.error ?? "No se pudo autocompletar.");
+      } else {
+        const d = res.draft;
+        setEmoji(d.emoji || emoji);
+        setCategory(d.category);
+        setCollection(d.collection);
+        setTagline(d.tagline);
+        setDescription(d.description);
+        setTags(d.tags.join(", "));
+        setBadges(d.badges);
+        setSegments(d.segments);
+        setRetail(d.retail);
+        setWholesale(d.wholesale);
+        setMoq(d.moq);
+        setUnitsPerCase(d.unitsPerCase);
+        setShippingPrice(d.shippingPrice);
+        if (d.landedCost) setLandedCost(d.landedCost);
+        setAiMsg(
+          d.source === "ai"
+            ? "🤖 Ficha generada con AI. Revisa y ajusta antes de guardar."
+            : "📝 Ficha generada con plantilla (activa AI_GATEWAY_API_KEY para mejores resultados).",
+        );
+      }
+    } catch {
+      setAiMsg("No se pudo autocompletar. Intenta de nuevo.");
+    } finally {
+      setAiPending(false);
+    }
+  }
+
   return (
     <form action={formAction} className="grid lg:grid-cols-[1.6fr_1fr] gap-6 items-start">
       <div className="space-y-6">
+        {/* Autocompletar con AI */}
+        <div className="card p-5" style={{ background: "var(--color-cream-2)" }}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="font-display text-lg">✨ Autocompletar con AI</div>
+              <p className="text-sm" style={{ color: "var(--color-ink-soft)" }}>
+                Escribe el nombre (y opcionalmente costo importado / enlace) y deja que la AI
+                rellene descripción, tags, segmentos y precios.
+              </p>
+            </div>
+            <button type="button" onClick={autofill} disabled={aiPending} className="btn btn-primary">
+              {aiPending ? "Generando…" : "✨ Autocompletar"}
+            </button>
+          </div>
+          {aiMsg && (
+            <p className="text-sm mt-3 font-semibold" style={{ color: "var(--color-grape)" }}>{aiMsg}</p>
+          )}
+        </div>
+
         {/* Básico */}
         <fieldset className="card p-6">
           <legend className="font-display text-xl px-2">Información básica</legend>
@@ -62,11 +151,11 @@ export function ProductForm({
             </div>
             <div className="sm:col-span-2">
               <label className="label" htmlFor="tagline">Frase corta</label>
-              <input id="tagline" name="tagline" className="field" defaultValue={product?.tagline} placeholder="Lo que engancha en una línea" />
+              <input id="tagline" name="tagline" className="field" value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Lo que engancha en una línea" />
             </div>
             <div className="sm:col-span-2">
               <label className="label" htmlFor="description">Descripción</label>
-              <textarea id="description" name="description" className="field min-h-24" defaultValue={product?.description} rows={4} />
+              <textarea id="description" name="description" className="field min-h-24" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
             </div>
           </div>
         </fieldset>
@@ -77,24 +166,24 @@ export function ProductForm({
           <div className="grid sm:grid-cols-2 gap-4 mt-2">
             <div>
               <label className="label" htmlFor="category">Categoría</label>
-              <input id="category" name="category" className="field" list="cat-list" defaultValue={product?.category} placeholder="Ej. Tech & Gadgets" />
+              <input id="category" name="category" className="field" list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ej. Tech & Gadgets" />
               <datalist id="cat-list">{catOptions.map((c) => <option key={c} value={c} />)}</datalist>
             </div>
             <div>
               <label className="label" htmlFor="collection">Colección</label>
-              <input id="collection" name="collection" className="field" list="col-list" defaultValue={product?.collection} placeholder="Ej. Ofertas" />
+              <input id="collection" name="collection" className="field" list="col-list" value={collection} onChange={(e) => setCollection(e.target.value)} placeholder="Ej. Ofertas" />
               <datalist id="col-list">{colOptions.map((c) => <option key={c} value={c} />)}</datalist>
             </div>
             <div className="sm:col-span-2">
               <label className="label" htmlFor="tags">Etiquetas (separadas por coma)</label>
-              <input id="tags" name="tags" className="field" defaultValue={product?.tags.join(", ")} placeholder="carro, viral, regalo" />
+              <input id="tags" name="tags" className="field" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="carro, viral, regalo" />
             </div>
             <div>
               <span className="label">Badges</span>
               <div className="flex flex-wrap gap-3">
                 {BADGE_OPTIONS.map((b) => (
                   <label key={b.value} className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-                    <input type="checkbox" name="badges" value={b.value} defaultChecked={product?.badges.includes(b.value)} />
+                    <input type="checkbox" name="badges" value={b.value} checked={badges.includes(b.value)} onChange={() => setBadges((cur) => toggle(cur, b.value))} />
                     {b.label}
                   </label>
                 ))}
@@ -105,7 +194,7 @@ export function ProductForm({
               <div className="flex flex-wrap gap-3">
                 {SEGMENT_OPTIONS.map((s) => (
                   <label key={s.value} className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-                    <input type="checkbox" name="segments" value={s.value} defaultChecked={product?.segments.includes(s.value)} />
+                    <input type="checkbox" name="segments" value={s.value} checked={segments.includes(s.value)} onChange={() => setSegments((cur) => toggle(cur, s.value))} />
                     {s.label}
                   </label>
                 ))}
@@ -120,22 +209,33 @@ export function ProductForm({
           <div className="grid sm:grid-cols-3 gap-4 mt-2">
             <Num label="Precio detal (USD) *" name="retail" value={retail} onChange={setRetail} step="0.01" required />
             <Num label="Descuento (%)" name="discountPercent" value={discount} onChange={setDiscount} step="1" />
-            <Field label="Precio mayorista (USD)" name="wholesale" defaultValue={product?.wholesale ?? 0} type="number" step="0.01" />
-            <Field label="Mínimo mayorista (uds)" name="moq" defaultValue={product?.moq ?? 1} type="number" step="1" />
-            <Field label="Caja máster (uds)" name="unitsPerCase" defaultValue={product?.unitsPerCase ?? 1} type="number" step="1" />
-            <Field label="Costo de envío (USD)" name="shippingPrice" defaultValue={product?.shippingPrice ?? 0} type="number" step="0.01" />
-            <Field label="Costo importado (USD)" name="landedCost" defaultValue={product?.landedCost ?? 0} type="number" step="0.01" />
+            <Num label="Precio mayorista (USD)" name="wholesale" value={wholesale} onChange={setWholesale} step="0.01" />
+            <Num label="Mínimo mayorista (uds)" name="moq" value={moq} onChange={setMoq} step="1" />
+            <Num label="Caja máster (uds)" name="unitsPerCase" value={unitsPerCase} onChange={setUnitsPerCase} step="1" />
+            <Num label="Costo de envío (USD)" name="shippingPrice" value={shippingPrice} onChange={setShippingPrice} step="0.01" />
+            <Num label="Costo importado (USD)" name="landedCost" value={landedCost} onChange={setLandedCost} step="0.01" />
             <Field label="Inventario (uds)" name="stock" defaultValue={product?.stock ?? 0} type="number" step="1" />
-            <Field label="Enlace proveedor (Alibaba)" name="sourceUrl" defaultValue={product?.sourceUrl} placeholder="https://..." />
+            <div>
+              <label className="label" htmlFor="sourceUrl">Enlace proveedor (Alibaba)</label>
+              <input id="sourceUrl" name="sourceUrl" className="field" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." />
+            </div>
           </div>
         </fieldset>
 
         {/* Imagen */}
         <fieldset className="card p-6">
-          <legend className="font-display text-xl px-2">Imagen</legend>
+          <legend className="font-display text-xl px-2">Imagen del producto</legend>
+          <input type="hidden" name="imageUrl" value={imageUrl} />
           <input type="hidden" name="gradient" value={gradient} />
+
           <p className="text-sm mb-3 mt-2" style={{ color: "var(--color-ink-soft)" }}>
-            Elige un fondo (el emoji va encima). Luego puedes cambiarlo por foto real.
+            Sube una foto real (recomendado). Se recorta a cuadrado con el editor.
+          </p>
+          <ImageEditor value={imageUrl} onChange={setImageUrl} />
+
+          <p className="text-sm mb-2 mt-6 font-semibold" style={{ color: "var(--color-ink-soft)" }}>
+            Fondo de respaldo
+            <span className="font-normal" style={{ color: "var(--color-muted)" }}> · se usa solo si no hay foto</span>
           </p>
           <div className="grid grid-cols-6 gap-2">
             {GRADIENT_PRESETS.map((g) => (
@@ -160,9 +260,14 @@ export function ProductForm({
         <div className="card p-5">
           <span className="label">Vista previa</span>
           <div className="card overflow-hidden mt-1">
-            <div className="aspect-[4/3] grid place-items-center text-6xl" style={{ background: gradient }}>
-              <span className="drop-shadow-lg">{emoji || "📦"}</span>
-            </div>
+            {imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="vista previa" className="aspect-[4/3] w-full object-cover" />
+            ) : (
+              <div className="aspect-[4/3] grid place-items-center text-6xl" style={{ background: gradient }}>
+                <span className="drop-shadow-lg">{emoji || "📦"}</span>
+              </div>
+            )}
             <div className="p-4">
               <h3 className="font-display text-lg leading-tight">{name || "Nombre del producto"}</h3>
               <div className="flex items-baseline gap-2 mt-2">

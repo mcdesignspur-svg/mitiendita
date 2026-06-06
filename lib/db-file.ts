@@ -1,9 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { Business, Order, Product } from "./types";
+import type {
+  Business,
+  Order,
+  Product,
+  SourcingCandidate,
+  Supplier,
+  SupplierStatus,
+} from "./types";
 import { hashPassword } from "./crypto";
 import { SEED_PRODUCTS, slugify } from "./products";
+import { SEED_CANDIDATES, SEED_SUPPLIERS } from "./sourcing";
 
 /**
  * Fallback de desarrollo: un archivo JSON en /.data.
@@ -18,6 +26,8 @@ interface DB {
   businesses: Business[];
   orders: Order[];
   products: Product[];
+  sourcingCandidates: SourcingCandidate[];
+  suppliers: Supplier[];
 }
 
 function seed(): DB {
@@ -53,6 +63,8 @@ function seed(): DB {
     ],
     orders: [],
     products: SEED_PRODUCTS,
+    sourcingCandidates: SEED_CANDIDATES,
+    suppliers: SEED_SUPPLIERS,
   };
 }
 
@@ -77,11 +89,24 @@ function migrate(db: Partial<DB>): DB {
     businesses: db.businesses ?? [],
     orders: db.orders ?? [],
     products: db.products ?? [],
+    sourcingCandidates: db.sourcingCandidates ?? [],
+    suppliers: db.suppliers ?? [],
   };
+  let dirty = false;
   if (!db.products || db.products.length === 0) {
     full.products = SEED_PRODUCTS;
-    write(full);
+    dirty = true;
   }
+  // Siembra la columna operativa en stores viejos que no la tenían.
+  if (db.sourcingCandidates === undefined) {
+    full.sourcingCandidates = SEED_CANDIDATES;
+    dirty = true;
+  }
+  if (db.suppliers === undefined) {
+    full.suppliers = SEED_SUPPLIERS;
+    dirty = true;
+  }
+  if (dirty) write(full);
   return full;
 }
 
@@ -236,4 +261,93 @@ export async function listCollections(): Promise<string[]> {
   return Array.from(
     new Set(read().products.map((p) => p.collection).filter(Boolean) as string[]),
   ).sort();
+}
+
+// --- Sourcing candidates ----------------------------------------
+export async function listCandidates(): Promise<SourcingCandidate[]> {
+  return read().sourcingCandidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getCandidateById(cid: string): Promise<SourcingCandidate | undefined> {
+  return read().sourcingCandidates.find((c) => c.id === cid);
+}
+
+export async function createCandidate(
+  input: Omit<SourcingCandidate, "id" | "createdAt">,
+): Promise<SourcingCandidate> {
+  const db = read();
+  const candidate: SourcingCandidate = {
+    ...input,
+    id: id("s"),
+    createdAt: new Date().toISOString(),
+  };
+  db.sourcingCandidates.push(candidate);
+  write(db);
+  return candidate;
+}
+
+export async function updateCandidate(
+  cid: string,
+  patch: Partial<SourcingCandidate>,
+): Promise<SourcingCandidate | undefined> {
+  const db = read();
+  const c = db.sourcingCandidates.find((x) => x.id === cid);
+  if (!c) return undefined;
+  Object.assign(c, patch);
+  write(db);
+  return c;
+}
+
+export async function deleteCandidate(cid: string): Promise<boolean> {
+  const db = read();
+  const before = db.sourcingCandidates.length;
+  db.sourcingCandidates = db.sourcingCandidates.filter((c) => c.id !== cid);
+  const removed = db.sourcingCandidates.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Suppliers --------------------------------------------------
+export async function listSuppliers(): Promise<Supplier[]> {
+  return read().suppliers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getSupplierById(sid: string): Promise<Supplier | undefined> {
+  return read().suppliers.find((s) => s.id === sid);
+}
+
+export async function createSupplier(
+  input: Omit<Supplier, "id" | "createdAt" | "status"> & { status?: SupplierStatus },
+): Promise<Supplier> {
+  const db = read();
+  const supplier: Supplier = {
+    ...input,
+    status: input.status ?? "nuevo",
+    id: id("sup"),
+    createdAt: new Date().toISOString(),
+  };
+  db.suppliers.push(supplier);
+  write(db);
+  return supplier;
+}
+
+export async function updateSupplier(
+  sid: string,
+  patch: Partial<Supplier>,
+): Promise<Supplier | undefined> {
+  const db = read();
+  const s = db.suppliers.find((x) => x.id === sid);
+  if (!s) return undefined;
+  Object.assign(s, patch);
+  write(db);
+  return s;
+}
+
+export async function deleteSupplier(sid: string): Promise<boolean> {
+  const db = read();
+  const before = db.suppliers.length;
+  db.suppliers = db.suppliers.filter((s) => s.id !== sid);
+  const removed = db.suppliers.length < before;
+  if (removed) write(db);
+  return removed;
 }

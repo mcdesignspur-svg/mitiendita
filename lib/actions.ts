@@ -8,9 +8,18 @@ import {
   createProduct,
   deleteProduct,
   getBusinessByEmail,
+  getBusinessById,
   getProductById,
   setBusinessStatus,
   updateProduct,
+  createCandidate,
+  getCandidateById,
+  updateCandidate,
+  deleteCandidate,
+  createSupplier,
+  getSupplierById,
+  updateSupplier,
+  deleteSupplier,
 } from "./db";
 import {
   checkAdminPassword,
@@ -22,8 +31,27 @@ import {
   setSession,
   verifyPassword,
 } from "./auth";
-import { generateMarketingCopy, type CopyResult } from "./ai";
-import type { BusinessType, OrderItem, Product, Badge, Segment } from "./types";
+import {
+  generateMarketingCopy,
+  generateProductDraft,
+  brainstormCandidates,
+  assessBusiness,
+  draftSupplierOutreach,
+  type CopyResult,
+  type ProductDraft,
+  type BusinessAssessment,
+} from "./ai";
+import { GRADIENT_PRESETS } from "./products";
+import { notifyOrderConfirmation, notifyBusinessApproved } from "./notify";
+import type {
+  BusinessType,
+  OrderItem,
+  Product,
+  Badge,
+  Segment,
+  SourcingStage,
+  SupplierStatus,
+} from "./types";
 
 export type FormState = { error?: string };
 
@@ -128,7 +156,8 @@ export async function adminLogoutAction(): Promise<void> {
 export async function approveBusinessAction(formData: FormData): Promise<void> {
   if (!(await isAdmin())) return;
   const bid = String(formData.get("bid") || "");
-  await setBusinessStatus(bid, "verified");
+  const business = await setBusinessStatus(bid, "verified");
+  if (business) await notifyBusinessApproved(business).catch(() => {});
   revalidatePath("/admin");
 }
 
@@ -165,6 +194,7 @@ export async function checkoutAction(
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const total = subtotal + shipping;
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
+  await notifyOrderConfirmation(order).catch(() => {});
   redirect(`/carrito/gracias?o=${order.id}`);
 }
 
@@ -216,6 +246,7 @@ function parseProductForm(fd: FormData): {
     slug: String(fd.get("slug") || "").trim() || undefined,
     emoji: String(fd.get("emoji") || "📦").trim() || "📦",
     gradient: String(fd.get("gradient") || "linear-gradient(135deg,#ff5a36,#ffc53d)"),
+    imageUrl: String(fd.get("imageUrl") || "").trim() || undefined,
     category: String(fd.get("category") || "General").trim() || "General",
     collection: String(fd.get("collection") || "").trim() || "General",
     tagline: String(fd.get("tagline") || "").trim(),
@@ -275,4 +306,179 @@ export async function toggleProductActiveAction(fd: FormData): Promise<void> {
   const current = await getProductById(pid);
   if (current) await updateProduct(pid, { active: current.active === false });
   revalidatePath("/admin/productos");
+}
+
+// --- AI: autocompletar producto (admin) ------------------------
+export type ProductDraftState = { draft?: ProductDraft; error?: string };
+
+export async function aiProductDraftAction(input: {
+  name: string;
+  landedCost?: number;
+  category?: string;
+  sourceUrl?: string;
+}): Promise<ProductDraftState> {
+  if (!(await isAdmin())) return { error: "No autorizado." };
+  const name = (input.name || "").trim();
+  if (!name) return { error: "Escribe el nombre del producto primero." };
+  try {
+    const draft = await generateProductDraft({
+      name,
+      landedCost: input.landedCost,
+      category: input.category?.trim() || undefined,
+      sourceUrl: input.sourceUrl?.trim() || undefined,
+    });
+    return { draft };
+  } catch {
+    return { error: "No se pudo autocompletar. Intenta de nuevo." };
+  }
+}
+
+// --- AI: copiloto de verificación B2B (admin) ------------------
+export type AssessState = { assessment?: BusinessAssessment; error?: string };
+
+export async function assessBusinessAction(
+  _prev: AssessState,
+  fd: FormData,
+): Promise<AssessState> {
+  if (!(await isAdmin())) return { error: "No autorizado." };
+  const bid = String(fd.get("bid") || "");
+  const b = await getBusinessById(bid);
+  if (!b) return { error: "Negocio no encontrado." };
+  try {
+    const assessment = await assessBusiness(b);
+    return { assessment };
+  } catch {
+    return { error: "No se pudo analizar el negocio." };
+  }
+}
+
+// --- Sourcing: pipeline (admin) --------------------------------
+export async function discoverCandidatesAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const brief = String(fd.get("brief") || "").trim();
+  const { candidates } = await brainstormCandidates({ brief, count: 4 });
+  for (const c of candidates) {
+    await createCandidate({
+      name: c.name,
+      emoji: c.emoji || "📦",
+      category: c.category || "General",
+      supplier: c.supplier || "",
+      unitCost: c.unitCost,
+      estRetail: c.estRetail,
+      estWholesale: c.estWholesale,
+      moq: c.moq,
+      trend: c.trend,
+      shipping: c.shipping,
+      stage: "Detectado",
+      signal: c.signal,
+      origin: "app",
+    });
+  }
+  revalidatePath("/admin");
+}
+
+export async function setCandidateStageAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  const stage = String(fd.get("stage") || "Detectado") as SourcingStage;
+  await updateCandidate(cid, { stage });
+  revalidatePath("/admin");
+}
+
+export async function deleteCandidateAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  if (cid) await deleteCandidate(cid);
+  revalidatePath("/admin");
+}
+
+/** Promueve un candidato a producto borrador (inactivo) y abre su edición. */
+export async function promoteCandidateAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  const c = await getCandidateById(cid);
+  if (!c) return;
+  const draft = await generateProductDraft({
+    name: c.name,
+    landedCost: c.unitCost,
+    category: c.category,
+    sourceUrl: c.sourceUrl,
+    hint: c.signal,
+  });
+  const product = await createProduct({
+    name: c.name,
+    emoji: c.emoji || draft.emoji,
+    gradient: GRADIENT_PRESETS[0],
+    category: c.category || draft.category,
+    collection: draft.collection,
+    tagline: draft.tagline,
+    description: draft.description,
+    retail: c.estRetail || draft.retail,
+    wholesale: c.estWholesale ?? draft.wholesale,
+    moq: c.moq ?? draft.moq,
+    unitsPerCase: draft.unitsPerCase,
+    badges: draft.badges,
+    tags: draft.tags,
+    segments: draft.segments,
+    landedCost: c.unitCost,
+    sourceUrl: c.sourceUrl ?? "",
+    stock: 0,
+    discountPercent: 0,
+    shippingPrice: draft.shippingPrice,
+    active: false, // borrador: requiere revisión humana antes de publicar
+  });
+  await updateCandidate(cid, { stage: "Ordenado", productId: product.id });
+  redirect(`/admin/productos/${product.id}?ok=promovido`);
+}
+
+// --- Suplidores (admin) ----------------------------------------
+export async function createSupplierAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const name = String(fd.get("name") || "").trim();
+  if (!name) return;
+  await createSupplier({
+    name,
+    platform: String(fd.get("platform") || "Alibaba").trim() || "Alibaba",
+    url: String(fd.get("url") || "").trim() || undefined,
+    email: String(fd.get("email") || "").trim() || undefined,
+    whatsapp: String(fd.get("whatsapp") || "").trim() || undefined,
+    country: String(fd.get("country") || "").trim() || undefined,
+    products: String(fd.get("products") || "").trim() || undefined,
+    notes: String(fd.get("notes") || "").trim() || undefined,
+  });
+  revalidatePath("/admin");
+}
+
+export async function setSupplierStatusAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const sid = String(fd.get("sid") || "");
+  const status = String(fd.get("status") || "nuevo") as SupplierStatus;
+  await updateSupplier(sid, { status });
+  revalidatePath("/admin");
+}
+
+export async function deleteSupplierAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const sid = String(fd.get("sid") || "");
+  if (sid) await deleteSupplier(sid);
+  revalidatePath("/admin");
+}
+
+/** Redacta (AI) y guarda el primer mensaje de outreach al suplidor. */
+export async function draftOutreachAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const sid = String(fd.get("sid") || "");
+  const s = await getSupplierById(sid);
+  if (!s) return;
+  const draft = await draftSupplierOutreach({
+    supplierName: s.name,
+    platform: s.platform,
+    channel: s.email ? "email" : "whatsapp",
+  });
+  await updateSupplier(sid, {
+    outreachDraft: `${draft.subject}\n\n${draft.body}`,
+    status: s.status === "nuevo" ? "contactado" : s.status,
+    lastContactedAt: new Date().toISOString(),
+  });
+  revalidatePath("/admin");
 }

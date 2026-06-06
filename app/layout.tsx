@@ -4,6 +4,7 @@ import "./globals.css";
 import { CartProvider } from "@/components/cart-context";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
+import { ShopAssistant } from "@/components/shop-assistant";
 import { getSessionBusiness } from "@/lib/auth";
 
 const display = Bricolage_Grotesque({
@@ -41,6 +42,7 @@ export default async function RootLayout({
           <Header session={session} />
           <main>{children}</main>
           <Footer />
+          <ShopAssistant />
         </CartProvider>
       </body>
     </html>

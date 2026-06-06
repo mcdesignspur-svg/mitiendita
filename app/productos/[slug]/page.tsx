@@ -45,11 +45,13 @@ export default async function ProductPage({
       <div className="grid lg:grid-cols-2 gap-10">
         {/* visual */}
         <div>
-          <div
-            className="card aspect-square grid place-items-center text-[10rem] overflow-hidden"
-            style={{ background: product.gradient }}
-          >
-            <span className="drop-shadow-xl">{product.emoji}</span>
+          <div className="card aspect-square overflow-hidden relative" style={{ background: product.gradient }}>
+            {product.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={product.imageUrl} alt={product.name} className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <span className="absolute inset-0 grid place-items-center text-[10rem] drop-shadow-xl">{product.emoji}</span>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 mt-4">
             {product.badges.map((b) => (

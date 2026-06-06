@@ -48,10 +48,15 @@ export default async function AdminProductosPage({
           return (
             <div key={p.id} className="card p-4 flex flex-wrap items-center gap-4">
               <div
-                className="grid place-items-center w-14 h-14 rounded-xl text-2xl shrink-0"
+                className="grid place-items-center w-14 h-14 rounded-xl text-2xl shrink-0 overflow-hidden relative"
                 style={{ background: p.gradient, border: "1.5px solid var(--color-ink)" }}
               >
-                {p.emoji}
+                {p.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.imageUrl} alt={p.name} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  p.emoji
+                )}
               </div>
 
               <div className="min-w-[12rem] flex-1">

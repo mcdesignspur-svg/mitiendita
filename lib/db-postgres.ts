@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, ne, desc } from "drizzle-orm";
 import { getDb } from "./drizzle";
-import { products, businesses, orders } from "./schema";
+import { products, businesses, orders, sourcingCandidates, suppliers } from "./schema";
 import { slugify } from "./products";
 import type {
   Business,
@@ -9,6 +9,10 @@ import type {
   BusinessType,
   Order,
   Product,
+  SourcingCandidate,
+  SourcingStage,
+  Supplier,
+  SupplierStatus,
 } from "./types";
 
 function newId(prefix: string): string {
@@ -36,6 +40,7 @@ function toProduct(r: ProductRow): Product {
     name: r.name,
     emoji: r.emoji,
     gradient: r.gradient,
+    imageUrl: r.imageUrl ?? undefined,
     category: r.category,
     collection: r.collection ?? undefined,
     tagline: r.tagline,
@@ -230,4 +235,131 @@ export async function listCollections(): Promise<string[]> {
     .map((r) => r.collection)
     .filter((c): c is string => Boolean(c))
     .sort();
+}
+
+// --- Sourcing candidates ---------------------------------------
+type CandidateRow = typeof sourcingCandidates.$inferSelect;
+
+function toCandidate(r: CandidateRow): SourcingCandidate {
+  return {
+    id: r.id,
+    name: r.name,
+    emoji: r.emoji,
+    category: r.category,
+    supplier: r.supplier,
+    supplierId: r.supplierId ?? undefined,
+    unitCost: r.unitCost,
+    estRetail: r.estRetail,
+    estWholesale: r.estWholesale ?? undefined,
+    moq: r.moq ?? undefined,
+    trend: r.trend,
+    shipping: r.shipping,
+    stage: r.stage as SourcingStage,
+    signal: r.signal,
+    sourceUrl: r.sourceUrl ?? undefined,
+    notes: r.notes ?? undefined,
+    origin: r.origin as SourcingCandidate["origin"],
+    productId: r.productId ?? undefined,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listCandidates(): Promise<SourcingCandidate[]> {
+  const rows = await getDb().select().from(sourcingCandidates).orderBy(desc(sourcingCandidates.seq));
+  return rows.map(toCandidate);
+}
+
+export async function getCandidateById(id: string): Promise<SourcingCandidate | undefined> {
+  const rows = await getDb().select().from(sourcingCandidates).where(eq(sourcingCandidates.id, id)).limit(1);
+  return rows[0] ? toCandidate(rows[0]) : undefined;
+}
+
+export async function createCandidate(
+  input: Omit<SourcingCandidate, "id" | "createdAt">,
+): Promise<SourcingCandidate> {
+  const candidate: SourcingCandidate = {
+    ...input,
+    id: newId("s"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(sourcingCandidates).values(candidate);
+  return candidate;
+}
+
+export async function updateCandidate(
+  id: string,
+  patch: Partial<SourcingCandidate>,
+): Promise<SourcingCandidate | undefined> {
+  const rows = await getDb()
+    .update(sourcingCandidates)
+    .set(patch)
+    .where(eq(sourcingCandidates.id, id))
+    .returning();
+  return rows[0] ? toCandidate(rows[0]) : undefined;
+}
+
+export async function deleteCandidate(id: string): Promise<boolean> {
+  const rows = await getDb()
+    .delete(sourcingCandidates)
+    .where(eq(sourcingCandidates.id, id))
+    .returning({ id: sourcingCandidates.id });
+  return rows.length > 0;
+}
+
+// --- Suppliers --------------------------------------------------
+type SupplierRow = typeof suppliers.$inferSelect;
+
+function toSupplier(r: SupplierRow): Supplier {
+  return {
+    id: r.id,
+    name: r.name,
+    platform: r.platform,
+    url: r.url ?? undefined,
+    contactName: r.contactName ?? undefined,
+    email: r.email ?? undefined,
+    whatsapp: r.whatsapp ?? undefined,
+    country: r.country ?? undefined,
+    products: r.products ?? undefined,
+    status: r.status as SupplierStatus,
+    outreachDraft: r.outreachDraft ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.createdAt,
+    lastContactedAt: r.lastContactedAt ?? undefined,
+  };
+}
+
+export async function listSuppliers(): Promise<Supplier[]> {
+  const rows = await getDb().select().from(suppliers).orderBy(desc(suppliers.seq));
+  return rows.map(toSupplier);
+}
+
+export async function getSupplierById(id: string): Promise<Supplier | undefined> {
+  const rows = await getDb().select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+  return rows[0] ? toSupplier(rows[0]) : undefined;
+}
+
+export async function createSupplier(
+  input: Omit<Supplier, "id" | "createdAt" | "status"> & { status?: SupplierStatus },
+): Promise<Supplier> {
+  const supplier: Supplier = {
+    ...input,
+    status: input.status ?? "nuevo",
+    id: newId("sup"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(suppliers).values(supplier);
+  return supplier;
+}
+
+export async function updateSupplier(
+  id: string,
+  patch: Partial<Supplier>,
+): Promise<Supplier | undefined> {
+  const rows = await getDb().update(suppliers).set(patch).where(eq(suppliers.id, id)).returning();
+  return rows[0] ? toSupplier(rows[0]) : undefined;
+}
+
+export async function deleteSupplier(id: string): Promise<boolean> {
+  const rows = await getDb().delete(suppliers).where(eq(suppliers.id, id)).returning({ id: suppliers.id });
+  return rows.length > 0;
 }

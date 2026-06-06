@@ -37,3 +37,17 @@ export const deleteProduct: typeof pg.deleteProduct = impl.deleteProduct;
 export const relatedProducts: typeof pg.relatedProducts = impl.relatedProducts;
 export const listCategories: typeof pg.listCategories = impl.listCategories;
 export const listCollections: typeof pg.listCollections = impl.listCollections;
+
+// Sourcing candidates (columna operativa)
+export const listCandidates: typeof pg.listCandidates = impl.listCandidates;
+export const getCandidateById: typeof pg.getCandidateById = impl.getCandidateById;
+export const createCandidate: typeof pg.createCandidate = impl.createCandidate;
+export const updateCandidate: typeof pg.updateCandidate = impl.updateCandidate;
+export const deleteCandidate: typeof pg.deleteCandidate = impl.deleteCandidate;
+
+// Suppliers (columna operativa)
+export const listSuppliers: typeof pg.listSuppliers = impl.listSuppliers;
+export const getSupplierById: typeof pg.getSupplierById = impl.getSupplierById;
+export const createSupplier: typeof pg.createSupplier = impl.createSupplier;
+export const updateSupplier: typeof pg.updateSupplier = impl.updateSupplier;
+export const deleteSupplier: typeof pg.deleteSupplier = impl.deleteSupplier;
