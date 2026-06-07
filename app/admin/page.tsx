@@ -3,6 +3,7 @@ import {
   listBusinesses,
   listOrders,
   listProducts,
+  listGrupos,
   listCandidates,
   listSuppliers,
 } from "@/lib/db";
@@ -31,6 +32,7 @@ export default async function AdminPage() {
   const verified = businesses.filter((b) => b.status === "verified");
   const orders = await listOrders();
   const products = await listProducts();
+  const grupos = await listGrupos();
   const candidatesRaw = await listCandidates();
   const suppliers = await listSuppliers();
   const activeProducts = products.filter((p) => p.active !== false);
@@ -63,8 +65,9 @@ export default async function AdminPage() {
       )}
 
       {/* metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
         <Metric value={`${activeProducts.length}/${products.length}`} label="Productos activos" accent="var(--color-teal-deep)" href="/admin/productos" />
+        <Metric value={String(grupos.length)} label="Grupos" accent="var(--color-teal)" href="/admin/grupos" />
         <Metric value={String(candidates.length)} label="Candidatos sourcing" accent="var(--color-grape)" />
         <Metric value={String(suppliers.length)} label="Suplidores" accent="var(--color-sun)" />
         <Metric value={String(pending.length)} label="Verificaciones" accent="var(--color-coral)" />

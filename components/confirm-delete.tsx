@@ -1,6 +1,6 @@
 "use client";
 
-import { deleteProductAction } from "@/lib/actions";
+import { deleteProductAction, deleteGrupoAction } from "@/lib/actions";
 
 export function DeleteProductButton({
   id,
@@ -35,6 +35,37 @@ export function DeleteProductButton({
             : { background: "#fdecea", color: "var(--color-coral-deep)", borderColor: "var(--color-coral)" }
         }
         aria-label={`Eliminar ${name}`}
+      >
+        {label}
+      </button>
+    </form>
+  );
+}
+
+export function DeleteGrupoButton({
+  id,
+  name,
+  label = "🗑 Eliminar grupo",
+}: {
+  id: string;
+  name: string;
+  label?: string;
+}) {
+  return (
+    <form
+      action={deleteGrupoAction}
+      onSubmit={(e) => {
+        if (!confirm(`¿Eliminar el grupo "${name}"? Los productos no se borran, solo se desasignan.`)) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="gid" value={id} />
+      <button
+        type="submit"
+        className="btn btn-sm"
+        style={{ background: "#fdecea", color: "var(--color-coral-deep)", borderColor: "var(--color-coral)" }}
+        aria-label={`Eliminar grupo ${name}`}
       >
         {label}
       </button>

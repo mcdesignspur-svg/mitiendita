@@ -141,7 +141,6 @@ export interface ProductDraft {
   name: string;
   emoji: string;
   category: string;
-  collection: string;
   tagline: string;
   description: string;
   tags: string[];
@@ -158,7 +157,6 @@ export interface ProductDraft {
 const ProductDraftSchema = z.object({
   emoji: z.string().describe("Un solo emoji que represente el producto"),
   category: z.string().describe('Una de: "Auto & Gasolinera", "Tech & Gadgets", "Hogar Viral", "Impulso & Conveniencia" u otra apropiada (NO uses categorías de salud/belleza)'),
-  collection: z.string(),
   tagline: z.string().describe("Una línea que engancha, máx ~70 caracteres"),
   description: z.string().describe("2-4 oraciones vendedoras en español boricua"),
   tags: z.array(z.string()).describe("3-6 etiquetas en minúscula, una palabra"),
@@ -204,7 +202,6 @@ function templateProductDraft(input: ProductDraftInput): ProductDraft {
     name: input.name,
     emoji: "📦",
     category: input.category || "General",
-    collection: "General",
     tagline: `${input.name}: alta utilidad, alta rotación.`,
     description: `${input.name} — producto importado de alta demanda, ideal para vender al detal y al por mayor en Puerto Rico.`,
     tags: input.name.toLowerCase().split(" ").filter((w) => w.length > 3).slice(0, 4),

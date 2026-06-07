@@ -18,7 +18,7 @@ export const products = pgTable("products", {
   gradient: text("gradient").notNull().default(""),
   imageUrl: text("image_url"),
   category: text("category").notNull().default("General"),
-  collection: text("collection").default("General"),
+  grupoIds: jsonb("grupo_ids").$type<string[]>().notNull().default([]),
   tagline: text("tagline").notNull().default(""),
   description: text("description").notNull().default(""),
   retail: doublePrecision("retail").notNull().default(0),
@@ -34,6 +34,17 @@ export const products = pgTable("products", {
   discountPercent: doublePrecision("discount_percent").notNull().default(0),
   shippingPrice: doublePrecision("shipping_price").notNull().default(0),
   active: boolean("active").notNull().default(true),
+});
+
+export const grupos = pgTable("grupos", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull().default("🗂️"),
+  description: text("description"),
+  color: text("color"),
+  createdAt: text("created_at").notNull(),
 });
 
 export const businesses = pgTable("businesses", {

@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type {
   Business,
+  Grupo,
   Order,
   Product,
   SourcingCandidate,
@@ -10,7 +11,7 @@ import type {
   SupplierStatus,
 } from "./types";
 import { hashPassword } from "./crypto";
-import { SEED_PRODUCTS, slugify } from "./products";
+import { SEED_PRODUCTS, SEED_GRUPOS, slugify } from "./products";
 import { SEED_CANDIDATES, SEED_SUPPLIERS } from "./sourcing";
 
 /**
@@ -26,6 +27,7 @@ interface DB {
   businesses: Business[];
   orders: Order[];
   products: Product[];
+  grupos: Grupo[];
   sourcingCandidates: SourcingCandidate[];
   suppliers: Supplier[];
 }
@@ -63,6 +65,7 @@ function seed(): DB {
     ],
     orders: [],
     products: SEED_PRODUCTS,
+    grupos: SEED_GRUPOS,
     sourcingCandidates: SEED_CANDIDATES,
     suppliers: SEED_SUPPLIERS,
   };
@@ -89,12 +92,18 @@ function migrate(db: Partial<DB>): DB {
     businesses: db.businesses ?? [],
     orders: db.orders ?? [],
     products: db.products ?? [],
+    grupos: db.grupos ?? [],
     sourcingCandidates: db.sourcingCandidates ?? [],
     suppliers: db.suppliers ?? [],
   };
   let dirty = false;
   if (!db.products || db.products.length === 0) {
     full.products = SEED_PRODUCTS;
+    dirty = true;
+  }
+  // Siembra los grupos en stores viejos que no los tenían.
+  if (db.grupos === undefined) {
+    full.grupos = SEED_GRUPOS;
     dirty = true;
   }
   // Siembra la columna operativa en stores viejos que no la tenían.
@@ -269,10 +278,59 @@ export async function listCategories(): Promise<string[]> {
   return Array.from(new Set(read().products.map((p) => p.category))).sort();
 }
 
-export async function listCollections(): Promise<string[]> {
-  return Array.from(
-    new Set(read().products.map((p) => p.collection).filter(Boolean) as string[]),
-  ).sort();
+// --- Grupos -----------------------------------------------------
+function uniqueGrupoSlug(grupos: Grupo[], base: string): string {
+  const safe = base || "grupo";
+  const taken = new Set(grupos.map((g) => g.slug));
+  if (!taken.has(safe)) return safe;
+  let i = 2;
+  while (taken.has(`${safe}-${i}`)) i++;
+  return `${safe}-${i}`;
+}
+
+export async function listGrupos(): Promise<Grupo[]> {
+  return read().grupos.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getGrupoById(gid: string): Promise<Grupo | undefined> {
+  return read().grupos.find((g) => g.id === gid);
+}
+
+export async function createGrupo(
+  input: Omit<Grupo, "id" | "slug" | "createdAt"> & { slug?: string },
+): Promise<Grupo> {
+  const db = read();
+  const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
+  const slug = uniqueGrupoSlug(db.grupos, base);
+  const grupo: Grupo = { ...input, id: id("g"), slug, createdAt: new Date().toISOString() };
+  db.grupos.push(grupo);
+  write(db);
+  return grupo;
+}
+
+export async function updateGrupo(
+  gid: string,
+  patch: Partial<Grupo>,
+): Promise<Grupo | undefined> {
+  const db = read();
+  const g = db.grupos.find((x) => x.id === gid);
+  if (!g) return undefined;
+  const { slug, ...rest } = patch;
+  Object.assign(g, rest);
+  if (slug) {
+    g.slug = uniqueGrupoSlug(db.grupos.filter((x) => x.id !== gid), slugify(slug));
+  }
+  write(db);
+  return g;
+}
+
+export async function deleteGrupo(gid: string): Promise<boolean> {
+  const db = read();
+  const before = db.grupos.length;
+  db.grupos = db.grupos.filter((g) => g.id !== gid);
+  const removed = db.grupos.length < before;
+  if (removed) write(db);
+  return removed;
 }
 
 // --- Sourcing candidates ----------------------------------------

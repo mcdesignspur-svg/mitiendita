@@ -1,12 +1,13 @@
 import crypto from "node:crypto";
 import { eq, ne, desc } from "drizzle-orm";
 import { getDb } from "./drizzle";
-import { products, businesses, orders, sourcingCandidates, suppliers } from "./schema";
+import { products, grupos, businesses, orders, sourcingCandidates, suppliers } from "./schema";
 import { slugify } from "./products";
 import type {
   Business,
   BusinessStatus,
   BusinessType,
+  Grupo,
   Order,
   Product,
   SourcingCandidate,
@@ -42,7 +43,7 @@ function toProduct(r: ProductRow): Product {
     gradient: r.gradient,
     imageUrl: r.imageUrl ?? undefined,
     category: r.category,
-    collection: r.collection ?? undefined,
+    grupoIds: r.grupoIds ?? [],
     tagline: r.tagline,
     description: r.description,
     retail: r.retail,
@@ -241,12 +242,60 @@ export async function listCategories(): Promise<string[]> {
   return rows.map((r) => r.category).sort();
 }
 
-export async function listCollections(): Promise<string[]> {
-  const rows = await getDb().selectDistinct({ collection: products.collection }).from(products);
-  return rows
-    .map((r) => r.collection)
-    .filter((c): c is string => Boolean(c))
-    .sort();
+// --- Grupos -----------------------------------------------------
+type GrupoRow = typeof grupos.$inferSelect;
+
+function toGrupo(r: GrupoRow): Grupo {
+  return {
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    emoji: r.emoji,
+    description: r.description ?? undefined,
+    color: r.color ?? undefined,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listGrupos(): Promise<Grupo[]> {
+  const rows = await getDb().select().from(grupos).orderBy(grupos.name);
+  return rows.map(toGrupo);
+}
+
+export async function getGrupoById(gid: string): Promise<Grupo | undefined> {
+  const rows = await getDb().select().from(grupos).where(eq(grupos.id, gid)).limit(1);
+  return rows[0] ? toGrupo(rows[0]) : undefined;
+}
+
+export async function createGrupo(
+  input: Omit<Grupo, "id" | "slug" | "createdAt"> & { slug?: string },
+): Promise<Grupo> {
+  const db = getDb();
+  const existing = await db.select({ slug: grupos.slug }).from(grupos);
+  const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
+  const slug = uniqueSlug(existing.map((r) => r.slug), base);
+  const grupo: Grupo = { ...input, id: newId("g"), slug, createdAt: new Date().toISOString() };
+  const rows = await db.insert(grupos).values(grupo).returning();
+  return toGrupo(rows[0]);
+}
+
+export async function updateGrupo(
+  gid: string,
+  patch: Partial<Grupo>,
+): Promise<Grupo | undefined> {
+  const db = getDb();
+  const set: Partial<typeof grupos.$inferInsert> = { ...patch };
+  if (patch.slug) {
+    const others = await db.select({ slug: grupos.slug }).from(grupos).where(ne(grupos.id, gid));
+    set.slug = uniqueSlug(others.map((r) => r.slug), slugify(patch.slug));
+  }
+  const rows = await db.update(grupos).set(set).where(eq(grupos.id, gid)).returning();
+  return rows[0] ? toGrupo(rows[0]) : undefined;
+}
+
+export async function deleteGrupo(gid: string): Promise<boolean> {
+  const rows = await getDb().delete(grupos).where(eq(grupos.id, gid)).returning({ id: grupos.id });
+  return rows.length > 0;
 }
 
 // --- Sourcing candidates ---------------------------------------

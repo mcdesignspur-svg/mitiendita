@@ -49,7 +49,13 @@ export const updateProduct = bind("updateProduct");
 export const deleteProduct = bind("deleteProduct");
 export const relatedProducts = bind("relatedProducts");
 export const listCategories = bind("listCategories");
-export const listCollections = bind("listCollections");
+
+// Grupos (curaduría de catálogo)
+export const listGrupos = bind("listGrupos");
+export const getGrupoById = bind("getGrupoById");
+export const createGrupo = bind("createGrupo");
+export const updateGrupo = bind("updateGrupo");
+export const deleteGrupo = bind("deleteGrupo");
 
 // Sourcing candidates (columna operativa)
 export const listCandidates = bind("listCandidates");

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listProducts } from "@/lib/db";
+import { listProducts, listGrupos } from "@/lib/db";
 import { effectiveRetail, hasDiscount } from "@/lib/products";
 import { money } from "@/lib/format";
 import { toggleProductActiveAction } from "@/lib/actions";
@@ -20,6 +20,8 @@ export default async function AdminProductosPage({
 }) {
   const { ok } = await searchParams;
   const products = await listProducts();
+  const grupos = await listGrupos();
+  const grupoById = new Map(grupos.map((g) => [g.id, g]));
 
   return (
     <div className="wrap py-10">
@@ -64,8 +66,25 @@ export default async function AdminProductosPage({
                   {p.name}
                 </Link>
                 <div className="text-xs mt-0.5" style={{ color: "var(--color-muted)" }}>
-                  {p.category} · {p.collection || "—"}
+                  {p.category}
                 </div>
+                {(p.grupoIds ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {(p.grupoIds ?? []).map((gid) => {
+                      const g = grupoById.get(gid);
+                      if (!g) return null;
+                      return (
+                        <span
+                          key={gid}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                          style={{ background: g.color || "var(--color-ink)", color: "#fff" }}
+                        >
+                          {g.emoji} {g.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="text-sm">

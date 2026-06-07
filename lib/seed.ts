@@ -5,11 +5,12 @@
 import { getDb } from "./drizzle";
 import {
   products as productsTable,
+  grupos as gruposTable,
   businesses as businessesTable,
   sourcingCandidates as candidatesTable,
   suppliers as suppliersTable,
 } from "./schema";
-import { SEED_PRODUCTS } from "./products";
+import { SEED_PRODUCTS, SEED_GRUPOS } from "./products";
 import { SEED_CANDIDATES, SEED_SUPPLIERS } from "./sourcing";
 import { hashPassword } from "./crypto";
 import type { Business } from "./types";
@@ -59,12 +60,13 @@ async function main() {
   ];
 
   await db.insert(businessesTable).values(demoBusinesses).onConflictDoNothing();
+  await db.insert(gruposTable).values(SEED_GRUPOS).onConflictDoNothing();
   await db.insert(productsTable).values(SEED_PRODUCTS).onConflictDoNothing();
   await db.insert(suppliersTable).values(SEED_SUPPLIERS).onConflictDoNothing();
   await db.insert(candidatesTable).values(SEED_CANDIDATES).onConflictDoNothing();
 
   console.log(
-    `✅ Seed completo: ${SEED_PRODUCTS.length} productos, ${demoBusinesses.length} negocios demo, ${SEED_SUPPLIERS.length} suplidores y ${SEED_CANDIDATES.length} candidatos de sourcing.`,
+    `✅ Seed completo: ${SEED_PRODUCTS.length} productos, ${SEED_GRUPOS.length} grupos, ${demoBusinesses.length} negocios demo, ${SEED_SUPPLIERS.length} suplidores y ${SEED_CANDIDATES.length} candidatos de sourcing.`,
   );
   process.exit(0);
 }

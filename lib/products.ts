@@ -1,4 +1,4 @@
-import type { Product, Badge, Segment } from "./types";
+import type { Product, Badge, Segment, Grupo } from "./types";
 
 /**
  * Catálogo semilla. Se carga en el store la primera vez; a partir de ahí se
@@ -322,11 +322,59 @@ const RAW: Product[] = [
   },
 ];
 
-const COLLECTION_BY_CATEGORY: Record<string, string> = {
-  "Auto & Gasolinera": "Imprescindibles de Carro",
-  "Tech & Gadgets": "Tech Viral",
-  "Impulso & Conveniencia": "Conveniencia",
-  "Hogar Viral": "Hogar & Lifestyle",
+/**
+ * Grupos semilla (curaduría interna del catálogo). Se cargan junto con los
+ * productos; a partir de ahí se gestionan desde /admin/grupos.
+ */
+export const SEED_GRUPOS: Grupo[] = [
+  {
+    id: "g-mas-vendidos",
+    slug: "mas-vendidos",
+    name: "Más Vendidos",
+    emoji: "🔥",
+    description: "Los productos que más rotan en góndola.",
+    color: "var(--color-coral)",
+    createdAt: "2026-05-20T14:00:00.000Z",
+  },
+  {
+    id: "g-carro",
+    slug: "imprescindibles-de-carro",
+    name: "Imprescindibles de Carro",
+    emoji: "🚗",
+    description: "Accesorios de auto de alta rotación para gasolineras.",
+    color: "var(--color-teal-deep)",
+    createdAt: "2026-05-20T14:00:00.000Z",
+  },
+  {
+    id: "g-verano",
+    slug: "verano-boricua",
+    name: "Verano Boricua",
+    emoji: "🏝️",
+    description: "Para el calor, la playa y los festivales.",
+    color: "var(--color-sun)",
+    createdAt: "2026-05-20T14:00:00.000Z",
+  },
+  {
+    id: "g-emergencia",
+    slug: "kit-de-emergencia",
+    name: "Kit de Emergencia",
+    emoji: "🔦",
+    description: "Apagones y temporada de huracanes.",
+    color: "var(--color-grape)",
+    createdAt: "2026-05-20T14:00:00.000Z",
+  },
+];
+
+// Asignación semilla de productos a grupos (por id de producto).
+const GRUPOS_BY_PRODUCT: Record<string, string[]> = {
+  "p-001": ["g-carro", "g-mas-vendidos"],
+  "p-002": ["g-carro"],
+  "p-004": ["g-mas-vendidos"],
+  "p-005": ["g-emergencia", "g-mas-vendidos"],
+  "p-007": ["g-emergencia"],
+  "p-010": ["g-verano"],
+  "p-014": ["g-verano"],
+  "p-015": ["g-carro"],
 };
 
 // Descuentos de demostración (editables/quitables desde el admin).
@@ -339,7 +387,7 @@ const DEMO_DISCOUNTS: Record<string, number> = {
 /** Catálogo semilla normalizado con los campos de gestión de tienda. */
 export const SEED_PRODUCTS: Product[] = RAW.map((p) => ({
   ...p,
-  collection: COLLECTION_BY_CATEGORY[p.category] ?? "General",
+  grupoIds: GRUPOS_BY_PRODUCT[p.id] ?? [],
   discountPercent: DEMO_DISCOUNTS[p.id] ?? 0,
   shippingPrice: p.retail >= 30 ? 6.99 : 3.99,
   active: true,
@@ -367,16 +415,6 @@ export const DEFAULT_CATEGORIES = [
   "Tech & Gadgets",
   "Impulso & Conveniencia",
   "Hogar Viral",
-];
-
-export const DEFAULT_COLLECTIONS = [
-  "Tech Viral",
-  "Imprescindibles de Carro",
-  "Conveniencia",
-  "Hogar & Lifestyle",
-  "Más Vendidos",
-  "Ofertas",
-  "General",
 ];
 
 export const GRADIENT_PRESETS = [

@@ -11,11 +11,15 @@ import {
   updateOrder,
   createProduct,
   deleteProduct,
+  listProducts,
   getBusinessByEmail,
   getBusinessById,
   getProductById,
   setBusinessStatus,
   updateProduct,
+  createGrupo,
+  updateGrupo,
+  deleteGrupo,
   createCandidate,
   getCandidateById,
   updateCandidate,
@@ -334,6 +338,7 @@ function parseProductForm(fd: FormData): {
 
   const badges = (fd.getAll("badges") as string[]).filter(Boolean) as Badge[];
   const segments = (fd.getAll("segments") as string[]).filter(Boolean) as Segment[];
+  const grupoIds = (fd.getAll("grupoIds") as string[]).filter(Boolean);
   const tags = String(fd.get("tags") || "")
     .split(",")
     .map((t) => t.trim().toLowerCase())
@@ -346,7 +351,7 @@ function parseProductForm(fd: FormData): {
     gradient: String(fd.get("gradient") || "linear-gradient(135deg,#ff5a36,#ffc53d)"),
     imageUrl: String(fd.get("imageUrl") || "").trim() || undefined,
     category: String(fd.get("category") || "General").trim() || "General",
-    collection: String(fd.get("collection") || "").trim() || "General",
+    grupoIds,
     tagline: String(fd.get("tagline") || "").trim(),
     description: String(fd.get("description") || "").trim(),
     retail,
@@ -403,6 +408,72 @@ export async function toggleProductActiveAction(fd: FormData): Promise<void> {
   const pid = String(fd.get("id") || "");
   const current = await getProductById(pid);
   if (current) await updateProduct(pid, { active: current.active === false });
+  revalidatePath("/admin/productos");
+}
+
+// --- Grupos: curaduría de catálogo (admin) ---------------------
+export async function createGrupoAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const name = String(fd.get("name") || "").trim();
+  if (!name) return;
+  await createGrupo({
+    name,
+    emoji: String(fd.get("emoji") || "🗂️").trim() || "🗂️",
+    description: String(fd.get("description") || "").trim() || undefined,
+    color: String(fd.get("color") || "").trim() || undefined,
+  });
+  revalidatePath("/admin/grupos");
+  revalidatePath("/admin");
+}
+
+export async function updateGrupoAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const gid = String(fd.get("gid") || "");
+  const name = String(fd.get("name") || "").trim();
+  if (!gid || !name) return;
+  await updateGrupo(gid, {
+    name,
+    emoji: String(fd.get("emoji") || "🗂️").trim() || "🗂️",
+    description: String(fd.get("description") || "").trim() || undefined,
+    color: String(fd.get("color") || "").trim() || undefined,
+  });
+  revalidatePath("/admin/grupos");
+  revalidatePath("/admin/productos");
+}
+
+export async function deleteGrupoAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const gid = String(fd.get("gid") || "");
+  if (!gid) return;
+  // Limpia la referencia al grupo en todos los productos que lo tenían.
+  const products = await listProducts();
+  for (const p of products) {
+    if ((p.grupoIds ?? []).includes(gid)) {
+      await updateProduct(p.id, { grupoIds: (p.grupoIds ?? []).filter((g) => g !== gid) });
+    }
+  }
+  await deleteGrupo(gid);
+  revalidatePath("/admin/grupos");
+  revalidatePath("/admin/productos");
+  revalidatePath("/admin");
+}
+
+/** Asigna el conjunto de productos de un grupo de una sola vez ("poner productos por grupos"). */
+export async function setGrupoProductsAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const gid = String(fd.get("gid") || "");
+  if (!gid) return;
+  const selected = new Set((fd.getAll("pids") as string[]).filter(Boolean));
+  const products = await listProducts();
+  for (const p of products) {
+    const current = p.grupoIds ?? [];
+    const has = current.includes(gid);
+    const want = selected.has(p.id);
+    if (has === want) continue;
+    const next = want ? [...current, gid] : current.filter((g) => g !== gid);
+    await updateProduct(p.id, { grupoIds: next });
+  }
+  revalidatePath("/admin/grupos");
   revalidatePath("/admin/productos");
 }
 
@@ -508,7 +579,6 @@ export async function promoteCandidateAction(fd: FormData): Promise<void> {
     emoji: c.emoji || draft.emoji,
     gradient: GRADIENT_PRESETS[0],
     category: c.category || draft.category,
-    collection: draft.collection,
     tagline: draft.tagline,
     description: draft.description,
     retail: c.estRetail || draft.retail,

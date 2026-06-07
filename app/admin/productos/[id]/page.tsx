@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getProductById, listCategories, listCollections } from "@/lib/db";
+import { getProductById, listCategories, listGrupos } from "@/lib/db";
 import { ProductForm } from "@/components/product-form";
 import { DeleteProductButton } from "@/components/confirm-delete";
 
@@ -16,7 +16,7 @@ export default async function EditarProductoPage({
   if (!product) notFound();
 
   const categories = await listCategories();
-  const collections = await listCollections();
+  const grupos = await listGrupos();
 
   return (
     <div className="wrap py-10">
@@ -35,7 +35,7 @@ export default async function EditarProductoPage({
         </div>
       </div>
 
-      <ProductForm mode="edit" product={product} categories={categories} collections={collections} />
+      <ProductForm mode="edit" product={product} categories={categories} grupos={grupos} />
     </div>
   );
 }

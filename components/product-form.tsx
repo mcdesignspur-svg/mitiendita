@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import type { Product, Badge, Segment } from "@/lib/types";
+import type { Product, Badge, Segment, Grupo } from "@/lib/types";
 import { money } from "@/lib/format";
 import {
   GRADIENT_PRESETS,
   BADGE_OPTIONS,
   SEGMENT_OPTIONS,
   DEFAULT_CATEGORIES,
-  DEFAULT_COLLECTIONS,
 } from "@/lib/products";
 import {
   createProductAction,
@@ -23,12 +22,12 @@ export function ProductForm({
   mode,
   product,
   categories = [],
-  collections = [],
+  grupos = [],
 }: {
   mode: "create" | "edit";
   product?: Product;
   categories?: string[];
-  collections?: string[];
+  grupos?: Grupo[];
 }) {
   const action = mode === "edit" ? updateProductAction : createProductAction;
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, {});
@@ -41,7 +40,7 @@ export function ProductForm({
   const [tagline, setTagline] = useState(product?.tagline ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
-  const [collection, setCollection] = useState(product?.collection ?? "");
+  const [grupoIds, setGrupoIds] = useState<string[]>(product?.grupoIds ?? []);
   const [tags, setTags] = useState(product?.tags.join(", ") ?? "");
   const [badges, setBadges] = useState<Badge[]>(product?.badges ?? []);
   const [segments, setSegments] = useState<Segment[]>(product?.segments ?? []);
@@ -59,7 +58,6 @@ export function ProductForm({
   const [aiMsg, setAiMsg] = useState<string | null>(null);
 
   const catOptions = Array.from(new Set([...categories, ...DEFAULT_CATEGORIES]));
-  const colOptions = Array.from(new Set([...collections, ...DEFAULT_COLLECTIONS]));
   const previewPrice = discount > 0 ? Math.round(retail * (1 - discount / 100) * 100) / 100 : retail;
 
   function toggle<T>(list: T[], value: T): T[] {
@@ -86,7 +84,6 @@ export function ProductForm({
         const d = res.draft;
         setEmoji(d.emoji || emoji);
         setCategory(d.category);
-        setCollection(d.collection);
         setTagline(d.tagline);
         setDescription(d.description);
         setTags(d.tags.join(", "));
@@ -169,14 +166,48 @@ export function ProductForm({
               <input id="category" name="category" className="field" list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ej. Tech & Gadgets" />
               <datalist id="cat-list">{catOptions.map((c) => <option key={c} value={c} />)}</datalist>
             </div>
-            <div>
-              <label className="label" htmlFor="collection">Colección</label>
-              <input id="collection" name="collection" className="field" list="col-list" value={collection} onChange={(e) => setCollection(e.target.value)} placeholder="Ej. Ofertas" />
-              <datalist id="col-list">{colOptions.map((c) => <option key={c} value={c} />)}</datalist>
-            </div>
             <div className="sm:col-span-2">
               <label className="label" htmlFor="tags">Etiquetas (separadas por coma)</label>
               <input id="tags" name="tags" className="field" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="carro, viral, regalo" />
+            </div>
+            <div className="sm:col-span-2">
+              <span className="label">Grupos</span>
+              {grupos.length === 0 ? (
+                <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+                  No hay grupos todavía.{" "}
+                  <Link href="/admin/grupos" className="font-semibold hover:underline" style={{ color: "var(--color-grape)" }}>
+                    Crea uno en Grupos →
+                  </Link>
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {grupos.map((g) => {
+                    const on = grupoIds.includes(g.id);
+                    return (
+                      <label
+                        key={g.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold cursor-pointer transition-colors"
+                        style={{
+                          background: on ? g.color || "var(--color-ink)" : "var(--color-cream-2)",
+                          color: on ? "#fff" : "var(--color-ink-soft)",
+                          border: "1.5px solid var(--color-ink)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          name="grupoIds"
+                          value={g.id}
+                          checked={on}
+                          onChange={() => setGrupoIds((cur) => toggle(cur, g.id))}
+                          className="sr-only"
+                        />
+                        <span aria-hidden>{g.emoji}</span>
+                        {g.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div>
               <span className="label">Badges</span>

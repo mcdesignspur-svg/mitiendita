@@ -33,14 +33,30 @@ export interface Product {
   stock: number;
 
   // --- Gestión de tienda (editable desde el admin) ---
-  /** Colección a la que pertenece (ej. "Tech Viral", "Verano"). */
-  collection?: string;
+  /** Ids de los grupos a los que pertenece (curaduría interna del catálogo). */
+  grupoIds?: string[];
   /** Descuento al detal (B2C), 0–100 %. 0 = sin descuento. */
   discountPercent?: number;
   /** Costo de envío del producto (flat), USD. */
   shippingPrice?: number;
   /** Si está visible en la tienda pública. */
   active?: boolean;
+}
+
+/**
+ * Grupo curado de productos (gestión interna del catálogo). Un producto puede
+ * pertenecer a varios grupos a la vez. Solo se usa en el panel /admin.
+ */
+export interface Grupo {
+  id: string;
+  slug: string;
+  name: string;
+  emoji: string;
+  /** Descripción corta del grupo (opcional). */
+  description?: string;
+  /** Color de acento del chip (CSS var o hex). */
+  color?: string;
+  createdAt: string;
 }
 
 export type BusinessType =
