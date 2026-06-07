@@ -42,7 +42,7 @@ import {
 } from "./db";
 import { createTask, dispatchApproval, draftPurchaseOrder, receivePurchaseOrder, logRun } from "./control";
 import { applyOrderInventory } from "./inventory";
-import { ingestPayload } from "./ingest";
+import { ingestPayload, type CandidateInput, type SupplierInput, type QuoteInput } from "./ingest";
 import {
   checkAdminPassword,
   clearAdminSession,
@@ -872,4 +872,65 @@ export async function deleteCampaignAction(fd: FormData): Promise<void> {
   if (cid) await deleteCampaign(cid);
   revalidatePath("/admin/promociones");
   revalidatePath("/admin/productos");
+}
+
+// --- Consola del operador (Claude en Chrome, cookie-authed) -----
+/**
+ * La extensión (o Miguel) pega aquí los hallazgos en JSON
+ * { candidates, suppliers, quotes } y caen al brain vía el mismo ingestPayload
+ * que el webhook — pero autorizado por la cookie de admin, sin token.
+ */
+export async function operatorIngestAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) {
+    redirect("/admin/operador?err=auth");
+  }
+  const raw = String(fd.get("payload") || "").trim();
+  if (!raw) redirect("/admin/operador?err=vacio");
+
+  let body: { candidates?: unknown; suppliers?: unknown; quotes?: unknown };
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    redirect("/admin/operador?err=json");
+    return;
+  }
+  const candidates = Array.isArray(body.candidates) ? (body.candidates as CandidateInput[]) : [];
+  const suppliers = Array.isArray(body.suppliers) ? (body.suppliers as SupplierInput[]) : [];
+  const quotes = Array.isArray(body.quotes) ? (body.quotes as QuoteInput[]) : [];
+  if (candidates.length + suppliers.length + quotes.length === 0) {
+    redirect("/admin/operador?err=nada");
+  }
+  // Cada candidato/suplidor necesita un name (lo demás toma defaults).
+  if (candidates.some((c) => !c?.name?.trim?.()) || suppliers.some((s) => !s?.name?.trim?.())) {
+    redirect("/admin/operador?err=name");
+  }
+
+  const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: "chrome" });
+  revalidatePath("/admin/operador");
+  revalidatePath("/admin/aprobaciones");
+  revalidatePath("/admin");
+  redirect(
+    `/admin/operador?ok=${result.candidates.length}-${result.suppliers.length}-${result.quotes.length}`,
+  );
+}
+
+/**
+ * La extensión reporta que ejecutó una tarea de la cola (ej. envió el outreach en
+ * Alibaba). La saca de la cola del brief (executedAt) y deja rastro.
+ */
+export async function markQueueDoneAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const tid = String(fd.get("tid") || "");
+  const note = String(fd.get("note") || "").trim() || undefined;
+  const task = await getApprovalTaskById(tid);
+  if (!task || task.status !== "aprobada" || task.executedAt) return;
+  await updateApprovalTask(tid, { executedAt: new Date().toISOString() });
+  await logRun({
+    agent: "chrome",
+    action: "queue:done",
+    summary: `Ejecutada: ${task.title}`,
+    meta: { taskId: tid, note },
+  });
+  revalidatePath("/admin/operador");
+  revalidatePath("/admin/bitacora");
 }
