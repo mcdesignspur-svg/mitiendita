@@ -96,9 +96,122 @@ export const sourcingCandidates = pgTable("sourcing_candidates", {
   stage: text("stage").notNull().default("Detectado"),
   signal: text("signal").notNull().default(""),
   sourceUrl: text("source_url"),
+  imageUrl: text("image_url"),
   notes: text("notes"),
   origin: text("origin").notNull().default("manual"),
   productId: text("product_id"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const approvalTasks = pgTable("approval_tasks", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull().default(""),
+  status: text("status").notNull().default("pendiente"),
+  createdBy: text("created_by").notNull().default("operador"),
+  payload: jsonb("payload").$type<Record<string, unknown>>(),
+  relatedType: text("related_type"),
+  relatedId: text("related_id"),
+  decidedAt: text("decided_at"),
+  decisionNote: text("decision_note"),
+  executedAt: text("executed_at"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const agentRuns = pgTable("agent_runs", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  agent: text("agent").notNull(),
+  action: text("action").notNull(),
+  status: text("status").notNull().default("ok"),
+  summary: text("summary").notNull().default(""),
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const quotes = pgTable("quotes", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  supplierId: text("supplier_id"),
+  supplierName: text("supplier_name").notNull().default(""),
+  candidateId: text("candidate_id"),
+  productName: text("product_name").notNull().default(""),
+  unitCost: doublePrecision("unit_cost").notNull().default(0),
+  moq: integer("moq"),
+  leadTimeDays: integer("lead_time_days"),
+  sampleCost: doublePrecision("sample_cost"),
+  shippingToPR: doublePrecision("shipping_to_pr"),
+  currency: text("currency"),
+  validUntil: text("valid_until"),
+  notes: text("notes"),
+  origin: text("origin").notNull().default("agente"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  supplierId: text("supplier_id"),
+  supplierName: text("supplier_name").notNull().default(""),
+  candidateId: text("candidate_id"),
+  productId: text("product_id"),
+  quoteId: text("quote_id"),
+  productName: text("product_name").notNull().default(""),
+  qty: integer("qty").notNull().default(0),
+  unitCost: doublePrecision("unit_cost").notNull().default(0),
+  shippingCost: doublePrecision("shipping_cost"),
+  total: doublePrecision("total").notNull().default(0),
+  currency: text("currency"),
+  status: text("status").notNull().default("borrador"),
+  paymentMethod: text("payment_method"),
+  expectedAt: text("expected_at"),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull().default("operador"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const shipments = pgTable("shipments", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  purchaseOrderId: text("purchase_order_id").notNull(),
+  productName: text("product_name").notNull().default(""),
+  carrier: text("carrier"),
+  tracking: text("tracking"),
+  status: text("status").notNull().default("preparando"),
+  etaAt: text("eta_at"),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull().default("operador"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at"),
+});
+
+export const inventoryMovements = pgTable("inventory_movements", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull().default(""),
+  delta: integer("delta").notNull().default(0),
+  reason: text("reason").notNull().default("ajuste"),
+  ref: text("ref"),
+  note: text("note"),
+  createdBy: text("created_by").notNull().default("operador"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const campaigns = pgTable("campaigns", {
+  id: text("id").primaryKey(),
+  seq: serial("seq"),
+  name: text("name").notNull(),
+  productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
+  segment: text("segment"),
+  discountPercent: doublePrecision("discount_percent").notNull().default(0),
+  startsAt: text("starts_at"),
+  endsAt: text("ends_at"),
+  status: text("status").notNull().default("borrador"),
+  copy: text("copy"),
+  createdBy: text("created_by").notNull().default("operador"),
   createdAt: text("created_at").notNull(),
 });
 

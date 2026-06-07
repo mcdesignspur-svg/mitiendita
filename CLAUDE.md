@@ -52,7 +52,7 @@ Both adapters expose the **exact same async function signatures**, so pages/acti
 
 `lib/products.ts → SEED_PRODUCTS` is the single product seed source, consumed by **both** `db-file.ts` (`seed()`) and the Postgres seed script `lib/seed.ts`. `lib/sourcing.ts → SEED_CANDIDATES` / `SEED_SUPPLIERS` seed the operational spine into those same two files. The two demo businesses are duplicated there too — keep them aligned. `db-file.ts`'s `migrate()` backfills the `sourcingCandidates`/`suppliers` keys into older `db.json` files.
 
-**New persisted entities (`SourcingCandidate`, `Supplier`) follow the same sync discipline as products:** `lib/types.ts` → `lib/schema.ts` → `toCandidate`/`toSupplier` mappers + CRUD in `db-postgres.ts` → matching CRUD in `db-file.ts` → re-export in `db.ts` (typed against `pg.*`) → seed in `lib/sourcing.ts` + `lib/seed.ts`.
+**New persisted entities (`SourcingCandidate`, `Supplier`, `ApprovalTask`, `AgentRun`, `Quote`, `PurchaseOrder`, `Shipment`, `InventoryMovement`, `Campaign`) follow the same sync discipline as products:** `lib/types.ts` → `lib/schema.ts` → mapper + CRUD in `db-postgres.ts` → matching CRUD in `db-file.ts` (+ `migrate()` backfill of the new `db.json` keys) → re-export in `db.ts` (typed against `pg.*`) → seed where applicable. The control/ops entities seed empty (no `SEED_*`). All `jsonb`/optional columns map back to `undefined` in the mappers.
 
 ### Mutations = Server Actions
 
@@ -85,6 +85,8 @@ This is a **hybrid between the app and Claude as an operator agent** (see `OPERA
 
 The **operational spine** adds two persisted entities — `SourcingCandidate` (sourcing pipeline) and `Supplier` (proveedores). `lib/sourcing.ts` holds `SEED_CANDIDATES` + `SEED_SUPPLIERS` and the `scoreFor`/`viralScore` scoring (no longer static mock data). The admin sourcing/suppliers sections read these from the DB; "→ Crear producto" promotes a candidate into an inactive product **draft** for human review.
 
+**Control plane (the brain) — `lib/control.ts`.** The full automation plan lives in `OPERATIONS.md` (all 5 phases built). Backed by `ApprovalTask` (human-in-the-loop gates Miguel approves at `/admin/aprobaciones`) and `AgentRun` (agent/cron audit log at `/admin/bitacora`). `lib/control.ts` exposes `createTask()`, `logRun()`, `dispatchApproval(task)` (kind-specific effect on approve: candidato/outreach/orden_compra/recibo/recompra/activar_producto/promocion), `draftPurchaseOrder()`, `receivePurchaseOrder()`, and `buildBrief(agent)` (the stateless extension's "brain pass"). The operator **bus**, all gated by `OPERATOR_INGEST_TOKEN` via `lib/operator-auth.ts`: `GET /api/operator/brief` (read context), `POST /api/operator/ingest` (deposit candidates/suppliers/quotes), `POST /api/operator/queue/[id]/done` (ack). Other key modules: `lib/inventory.ts` (`adjustStock` — `Product.stock` is the running sum of `InventoryMovement`; sales decrement via `applyOrderInventory` in `checkoutAction`, receiving a PO increments), and `lib/cron.ts` (`runDailyMaintenance` behind `GET /api/cron/daily`, scheduled in `vercel.json`, auth `CRON_SECRET`). Admin sections: `/admin/aprobaciones`, `/admin/compras` (POs + quotes + shipments + movements), `/admin/promociones`, `/admin/bitacora`. **Ingesting candidates, drafting outreach, drafting POs, and creating campaigns all open gates instead of acting directly — preserve that when extending the operation.**
+
 ### Notifications (graceful degradation)
 
 `lib/notify.ts` sends email via the Resend REST API **only if `RESEND_API_KEY` is set** (no SDK dep); otherwise it logs and no-ops. Wired into `checkoutAction` (order confirmation) and `approveBusinessAction` (verification email). Supplier outreach is **draft-only** by design — never auto-sent without approval (see `OPERATOR.md` guardrails). WhatsApp will plug in behind the same interface.
@@ -95,7 +97,7 @@ Tailwind v4 is **CSS-first**: there is no `tailwind.config.*`. Design tokens (bo
 
 ## Environment
 
-Copy `.env.example` → `.env`. Vars: `SESSION_SECRET`, `ADMIN_PASSWORD`, `AI_GATEWAY_API_KEY` (optional — turns on the real AI brain), `AI_MODEL` (optional — gateway model string), `RESEND_API_KEY` + `EMAIL_FROM` (optional — transactional email), `BLOB_READ_WRITE_TOKEN` (optional — product image uploads), `DATABASE_URL` (optional — toggles Postgres), `DATABASE_URL_UNPOOLED` (preferred by `drizzle.config.ts` for DDL; Neon direct/unpooled connection).
+Copy `.env.example` → `.env`. Vars: `SESSION_SECRET`, `ADMIN_PASSWORD`, `AI_GATEWAY_API_KEY` (optional — turns on the real AI brain), `AI_MODEL` (optional — gateway model string), `RESEND_API_KEY` + `EMAIL_FROM` (optional — transactional email), `BLOB_READ_WRITE_TOKEN` (optional — product image uploads), `DATABASE_URL` (optional — toggles Postgres), `DATABASE_URL_UNPOOLED` (preferred by `drizzle.config.ts` for DDL; Neon direct/unpooled connection), `OPERATOR_INGEST_TOKEN` (optional — enables the operator bus: ingest/brief/queue; disabled when unset), `CRON_SECRET` (optional — Vercel cron auth for `/api/cron/daily`; allowed in dev when unset).
 
 ## Gotchas
 

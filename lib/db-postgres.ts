@@ -1,15 +1,30 @@
 import crypto from "node:crypto";
 import { eq, ne, desc } from "drizzle-orm";
 import { getDb } from "./drizzle";
-import { products, grupos, businesses, orders, sourcingCandidates, suppliers } from "./schema";
+import { products, grupos, businesses, orders, sourcingCandidates, suppliers, approvalTasks, agentRuns, quotes, purchaseOrders, shipments, inventoryMovements, campaigns } from "./schema";
 import { slugify } from "./products";
 import type {
+  AgentRun,
+  ApprovalKind,
+  ApprovalStatus,
+  ApprovalTask,
+  AgentName,
   Business,
   BusinessStatus,
   BusinessType,
+  Campaign,
+  CampaignStatus,
   Grupo,
+  InventoryMovement,
+  InventoryReason,
   Order,
   Product,
+  PurchaseOrder,
+  PurchaseOrderStatus,
+  PurchaseOrderPayment,
+  Quote,
+  Shipment,
+  ShipmentStatus,
   SourcingCandidate,
   SourcingStage,
   Supplier,
@@ -318,6 +333,7 @@ function toCandidate(r: CandidateRow): SourcingCandidate {
     stage: r.stage as SourcingStage,
     signal: r.signal,
     sourceUrl: r.sourceUrl ?? undefined,
+    imageUrl: r.imageUrl ?? undefined,
     notes: r.notes ?? undefined,
     origin: r.origin as SourcingCandidate["origin"],
     productId: r.productId ?? undefined,
@@ -422,5 +438,334 @@ export async function updateSupplier(
 
 export async function deleteSupplier(id: string): Promise<boolean> {
   const rows = await getDb().delete(suppliers).where(eq(suppliers.id, id)).returning({ id: suppliers.id });
+  return rows.length > 0;
+}
+
+// --- Approval tasks (cerebro de control) ------------------------
+type ApprovalTaskRow = typeof approvalTasks.$inferSelect;
+
+function toApprovalTask(r: ApprovalTaskRow): ApprovalTask {
+  return {
+    id: r.id,
+    kind: r.kind as ApprovalKind,
+    title: r.title,
+    summary: r.summary,
+    status: r.status as ApprovalStatus,
+    createdBy: r.createdBy as AgentName,
+    payload: r.payload ?? undefined,
+    relatedType: (r.relatedType as ApprovalTask["relatedType"]) ?? undefined,
+    relatedId: r.relatedId ?? undefined,
+    decidedAt: r.decidedAt ?? undefined,
+    decisionNote: r.decisionNote ?? undefined,
+    executedAt: r.executedAt ?? undefined,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listApprovalTasks(
+  opts: { status?: ApprovalStatus } = {},
+): Promise<ApprovalTask[]> {
+  const db = getDb();
+  const rows = opts.status
+    ? await db.select().from(approvalTasks).where(eq(approvalTasks.status, opts.status)).orderBy(desc(approvalTasks.seq))
+    : await db.select().from(approvalTasks).orderBy(desc(approvalTasks.seq));
+  return rows.map(toApprovalTask);
+}
+
+export async function getApprovalTaskById(id: string): Promise<ApprovalTask | undefined> {
+  const rows = await getDb().select().from(approvalTasks).where(eq(approvalTasks.id, id)).limit(1);
+  return rows[0] ? toApprovalTask(rows[0]) : undefined;
+}
+
+export async function createApprovalTask(
+  input: Omit<ApprovalTask, "id" | "createdAt" | "status"> & { status?: ApprovalStatus },
+): Promise<ApprovalTask> {
+  const task: ApprovalTask = {
+    ...input,
+    status: input.status ?? "pendiente",
+    id: newId("at"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(approvalTasks).values(task);
+  return task;
+}
+
+export async function updateApprovalTask(
+  id: string,
+  patch: Partial<ApprovalTask>,
+): Promise<ApprovalTask | undefined> {
+  const rows = await getDb().update(approvalTasks).set(patch).where(eq(approvalTasks.id, id)).returning();
+  return rows[0] ? toApprovalTask(rows[0]) : undefined;
+}
+
+export async function deleteApprovalTask(id: string): Promise<boolean> {
+  const rows = await getDb().delete(approvalTasks).where(eq(approvalTasks.id, id)).returning({ id: approvalTasks.id });
+  return rows.length > 0;
+}
+
+// --- Agent runs (bitácora) --------------------------------------
+type AgentRunRow = typeof agentRuns.$inferSelect;
+
+function toAgentRun(r: AgentRunRow): AgentRun {
+  return {
+    id: r.id,
+    agent: r.agent as AgentName,
+    action: r.action,
+    status: r.status as AgentRun["status"],
+    summary: r.summary,
+    meta: r.meta ?? undefined,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listAgentRuns(limit = 50): Promise<AgentRun[]> {
+  const rows = await getDb().select().from(agentRuns).orderBy(desc(agentRuns.seq)).limit(limit);
+  return rows.map(toAgentRun);
+}
+
+export async function createAgentRun(input: Omit<AgentRun, "id" | "createdAt">): Promise<AgentRun> {
+  const run: AgentRun = { ...input, id: newId("run"), createdAt: new Date().toISOString() };
+  await getDb().insert(agentRuns).values(run);
+  return run;
+}
+
+// --- Quotes (cotizaciones) --------------------------------------
+type QuoteRow = typeof quotes.$inferSelect;
+
+function toQuote(r: QuoteRow): Quote {
+  return {
+    id: r.id,
+    supplierId: r.supplierId ?? undefined,
+    supplierName: r.supplierName,
+    candidateId: r.candidateId ?? undefined,
+    productName: r.productName,
+    unitCost: r.unitCost,
+    moq: r.moq ?? undefined,
+    leadTimeDays: r.leadTimeDays ?? undefined,
+    sampleCost: r.sampleCost ?? undefined,
+    shippingToPR: r.shippingToPR ?? undefined,
+    currency: r.currency ?? undefined,
+    validUntil: r.validUntil ?? undefined,
+    notes: r.notes ?? undefined,
+    origin: r.origin as AgentName,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listQuotes(): Promise<Quote[]> {
+  const rows = await getDb().select().from(quotes).orderBy(desc(quotes.seq));
+  return rows.map(toQuote);
+}
+
+export async function createQuote(input: Omit<Quote, "id" | "createdAt">): Promise<Quote> {
+  const quote: Quote = { ...input, id: newId("q"), createdAt: new Date().toISOString() };
+  await getDb().insert(quotes).values(quote);
+  return quote;
+}
+
+export async function deleteQuote(id: string): Promise<boolean> {
+  const rows = await getDb().delete(quotes).where(eq(quotes.id, id)).returning({ id: quotes.id });
+  return rows.length > 0;
+}
+
+// --- Purchase orders (órdenes de compra) ------------------------
+type PurchaseOrderRow = typeof purchaseOrders.$inferSelect;
+
+function toPurchaseOrder(r: PurchaseOrderRow): PurchaseOrder {
+  return {
+    id: r.id,
+    supplierId: r.supplierId ?? undefined,
+    supplierName: r.supplierName,
+    candidateId: r.candidateId ?? undefined,
+    productId: r.productId ?? undefined,
+    quoteId: r.quoteId ?? undefined,
+    productName: r.productName,
+    qty: r.qty,
+    unitCost: r.unitCost,
+    shippingCost: r.shippingCost ?? undefined,
+    total: r.total,
+    currency: r.currency ?? undefined,
+    status: r.status as PurchaseOrderStatus,
+    paymentMethod: (r.paymentMethod as PurchaseOrderPayment) ?? undefined,
+    expectedAt: r.expectedAt ?? undefined,
+    notes: r.notes ?? undefined,
+    createdBy: r.createdBy as AgentName,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listPurchaseOrders(): Promise<PurchaseOrder[]> {
+  const rows = await getDb().select().from(purchaseOrders).orderBy(desc(purchaseOrders.seq));
+  return rows.map(toPurchaseOrder);
+}
+
+export async function getPurchaseOrderById(id: string): Promise<PurchaseOrder | undefined> {
+  const rows = await getDb().select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1);
+  return rows[0] ? toPurchaseOrder(rows[0]) : undefined;
+}
+
+export async function createPurchaseOrder(
+  input: Omit<PurchaseOrder, "id" | "createdAt" | "status"> & { status?: PurchaseOrderStatus },
+): Promise<PurchaseOrder> {
+  const po: PurchaseOrder = {
+    ...input,
+    status: input.status ?? "borrador",
+    id: newId("po"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(purchaseOrders).values(po);
+  return po;
+}
+
+export async function updatePurchaseOrder(
+  id: string,
+  patch: Partial<PurchaseOrder>,
+): Promise<PurchaseOrder | undefined> {
+  const rows = await getDb().update(purchaseOrders).set(patch).where(eq(purchaseOrders.id, id)).returning();
+  return rows[0] ? toPurchaseOrder(rows[0]) : undefined;
+}
+
+export async function deletePurchaseOrder(id: string): Promise<boolean> {
+  const rows = await getDb().delete(purchaseOrders).where(eq(purchaseOrders.id, id)).returning({ id: purchaseOrders.id });
+  return rows.length > 0;
+}
+
+// --- Shipments (embarques) --------------------------------------
+type ShipmentRow = typeof shipments.$inferSelect;
+
+function toShipment(r: ShipmentRow): Shipment {
+  return {
+    id: r.id,
+    purchaseOrderId: r.purchaseOrderId,
+    productName: r.productName,
+    carrier: r.carrier ?? undefined,
+    tracking: r.tracking ?? undefined,
+    status: r.status as ShipmentStatus,
+    etaAt: r.etaAt ?? undefined,
+    notes: r.notes ?? undefined,
+    createdBy: r.createdBy as AgentName,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt ?? undefined,
+  };
+}
+
+export async function listShipments(): Promise<Shipment[]> {
+  const rows = await getDb().select().from(shipments).orderBy(desc(shipments.seq));
+  return rows.map(toShipment);
+}
+
+export async function createShipment(
+  input: Omit<Shipment, "id" | "createdAt" | "status"> & { status?: ShipmentStatus },
+): Promise<Shipment> {
+  const shipment: Shipment = {
+    ...input,
+    status: input.status ?? "preparando",
+    id: newId("sh"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(shipments).values(shipment);
+  return shipment;
+}
+
+export async function updateShipment(
+  id: string,
+  patch: Partial<Shipment>,
+): Promise<Shipment | undefined> {
+  const rows = await getDb().update(shipments).set(patch).where(eq(shipments.id, id)).returning();
+  return rows[0] ? toShipment(rows[0]) : undefined;
+}
+
+export async function deleteShipment(id: string): Promise<boolean> {
+  const rows = await getDb().delete(shipments).where(eq(shipments.id, id)).returning({ id: shipments.id });
+  return rows.length > 0;
+}
+
+// --- Inventory movements (inventario) ---------------------------
+type InventoryMovementRow = typeof inventoryMovements.$inferSelect;
+
+function toInventoryMovement(r: InventoryMovementRow): InventoryMovement {
+  return {
+    id: r.id,
+    productId: r.productId,
+    productName: r.productName,
+    delta: r.delta,
+    reason: r.reason as InventoryReason,
+    ref: r.ref ?? undefined,
+    note: r.note ?? undefined,
+    createdBy: r.createdBy as AgentName,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listInventoryMovements(
+  opts: { productId?: string; limit?: number } = {},
+): Promise<InventoryMovement[]> {
+  const db = getDb();
+  const rows = opts.productId
+    ? await db.select().from(inventoryMovements).where(eq(inventoryMovements.productId, opts.productId)).orderBy(desc(inventoryMovements.seq)).limit(opts.limit ?? 200)
+    : await db.select().from(inventoryMovements).orderBy(desc(inventoryMovements.seq)).limit(opts.limit ?? 200);
+  return rows.map(toInventoryMovement);
+}
+
+export async function createInventoryMovement(
+  input: Omit<InventoryMovement, "id" | "createdAt">,
+): Promise<InventoryMovement> {
+  const mv: InventoryMovement = { ...input, id: newId("mv"), createdAt: new Date().toISOString() };
+  await getDb().insert(inventoryMovements).values(mv);
+  return mv;
+}
+
+// --- Campaigns (promociones) ------------------------------------
+type CampaignRow = typeof campaigns.$inferSelect;
+
+function toCampaign(r: CampaignRow): Campaign {
+  return {
+    id: r.id,
+    name: r.name,
+    productIds: r.productIds ?? [],
+    segment: (r.segment as Campaign["segment"]) ?? undefined,
+    discountPercent: r.discountPercent,
+    startsAt: r.startsAt ?? undefined,
+    endsAt: r.endsAt ?? undefined,
+    status: r.status as CampaignStatus,
+    copy: r.copy ?? undefined,
+    createdBy: r.createdBy as AgentName,
+    createdAt: r.createdAt,
+  };
+}
+
+export async function listCampaigns(): Promise<Campaign[]> {
+  const rows = await getDb().select().from(campaigns).orderBy(desc(campaigns.seq));
+  return rows.map(toCampaign);
+}
+
+export async function getCampaignById(id: string): Promise<Campaign | undefined> {
+  const rows = await getDb().select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  return rows[0] ? toCampaign(rows[0]) : undefined;
+}
+
+export async function createCampaign(
+  input: Omit<Campaign, "id" | "createdAt" | "status"> & { status?: CampaignStatus },
+): Promise<Campaign> {
+  const campaign: Campaign = {
+    ...input,
+    status: input.status ?? "borrador",
+    id: newId("camp"),
+    createdAt: new Date().toISOString(),
+  };
+  await getDb().insert(campaigns).values(campaign);
+  return campaign;
+}
+
+export async function updateCampaign(
+  id: string,
+  patch: Partial<Campaign>,
+): Promise<Campaign | undefined> {
+  const rows = await getDb().update(campaigns).set(patch).where(eq(campaigns.id, id)).returning();
+  return rows[0] ? toCampaign(rows[0]) : undefined;
+}
+
+export async function deleteCampaign(id: string): Promise<boolean> {
+  const rows = await getDb().delete(campaigns).where(eq(campaigns.id, id)).returning({ id: campaigns.id });
   return rows.length > 0;
 }

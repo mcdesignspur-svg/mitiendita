@@ -51,7 +51,7 @@ const BADGES = ["viral", "nuevo", "top"] as const;
  * viral / de alta utilidad / de impulso que las gasolineras y los mini-markets.
  * NO son de belleza, bienestar ni suplementos.
  */
-const SURTIDO_RULE =
+export const SURTIDO_RULE =
   'Mi Tiendita PR vende productos virales / de alta utilidad / de impulso (tech, gadgets, accesorios de carro, hogar viral, conveniencia). Los tres canales de negocio —gasolineras, mini-markets y FARMACIAS— venden el MISMO tipo de productos de conveniencia/impulso. Las farmacias aquí son un canal de conveniencia: NO vendas para ellas productos de belleza, bienestar, skincare, suplementos ni salud. Nunca propongas productos de belleza/bienestar/suplementos/salud.';
 
 // ===========================================================================

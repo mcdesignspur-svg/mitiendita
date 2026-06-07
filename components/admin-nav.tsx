@@ -5,8 +5,12 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/admin", label: "Resumen", exact: true },
+  { href: "/admin/aprobaciones", label: "Aprobaciones" },
+  { href: "/admin/compras", label: "Compras" },
   { href: "/admin/productos", label: "Productos" },
   { href: "/admin/grupos", label: "Grupos" },
+  { href: "/admin/promociones", label: "Promos" },
+  { href: "/admin/bitacora", label: "Bitácora" },
 ];
 
 export function AdminNav() {

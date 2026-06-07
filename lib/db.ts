@@ -70,3 +70,43 @@ export const getSupplierById = bind("getSupplierById");
 export const createSupplier = bind("createSupplier");
 export const updateSupplier = bind("updateSupplier");
 export const deleteSupplier = bind("deleteSupplier");
+
+// Approval tasks (cerebro de control)
+export const listApprovalTasks = bind("listApprovalTasks");
+export const getApprovalTaskById = bind("getApprovalTaskById");
+export const createApprovalTask = bind("createApprovalTask");
+export const updateApprovalTask = bind("updateApprovalTask");
+export const deleteApprovalTask = bind("deleteApprovalTask");
+
+// Agent runs (bitácora)
+export const listAgentRuns = bind("listAgentRuns");
+export const createAgentRun = bind("createAgentRun");
+
+// Quotes (cotizaciones)
+export const listQuotes = bind("listQuotes");
+export const createQuote = bind("createQuote");
+export const deleteQuote = bind("deleteQuote");
+
+// Purchase orders (órdenes de compra)
+export const listPurchaseOrders = bind("listPurchaseOrders");
+export const getPurchaseOrderById = bind("getPurchaseOrderById");
+export const createPurchaseOrder = bind("createPurchaseOrder");
+export const updatePurchaseOrder = bind("updatePurchaseOrder");
+export const deletePurchaseOrder = bind("deletePurchaseOrder");
+
+// Shipments (embarques)
+export const listShipments = bind("listShipments");
+export const createShipment = bind("createShipment");
+export const updateShipment = bind("updateShipment");
+export const deleteShipment = bind("deleteShipment");
+
+// Inventory movements (inventario)
+export const listInventoryMovements = bind("listInventoryMovements");
+export const createInventoryMovement = bind("createInventoryMovement");
+
+// Campaigns (promociones)
+export const listCampaigns = bind("listCampaigns");
+export const getCampaignById = bind("getCampaignById");
+export const createCampaign = bind("createCampaign");
+export const updateCampaign = bind("updateCampaign");
+export const deleteCampaign = bind("deleteCampaign");

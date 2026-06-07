@@ -20,7 +20,6 @@ import {
   createGrupo,
   updateGrupo,
   deleteGrupo,
-  createCandidate,
   getCandidateById,
   updateCandidate,
   deleteCandidate,
@@ -28,7 +27,22 @@ import {
   getSupplierById,
   updateSupplier,
   deleteSupplier,
+  getApprovalTaskById,
+  updateApprovalTask,
+  getPurchaseOrderById,
+  updatePurchaseOrder,
+  deletePurchaseOrder,
+  createShipment,
+  updateShipment,
+  deleteShipment,
+  createCampaign,
+  getCampaignById,
+  updateCampaign,
+  deleteCampaign,
 } from "./db";
+import { createTask, dispatchApproval, draftPurchaseOrder, receivePurchaseOrder, logRun } from "./control";
+import { applyOrderInventory } from "./inventory";
+import { ingestPayload } from "./ingest";
 import {
   checkAdminPassword,
   clearAdminSession,
@@ -59,6 +73,8 @@ import type {
   Segment,
   SourcingStage,
   SupplierStatus,
+  PurchaseOrderStatus,
+  ShipmentStatus,
 } from "./types";
 
 export type FormState = { error?: string };
@@ -215,6 +231,7 @@ export async function checkoutAction(
       paymentStatus: "factura_pendiente",
       paymentMethod: "factura",
     });
+    await applyOrderInventory(order).catch(() => {});
     await notifyOrderConfirmation(order).catch(() => {});
     redirect(`/carrito/gracias?o=${order.id}`);
   }
@@ -234,6 +251,7 @@ export async function checkoutAction(
       paymentStatus: "pendiente_pago",
       paymentMethod: "ath_movil",
     });
+    await applyOrderInventory(order).catch(() => {});
     redirect(`/carrito/ath?o=${order.id}`);
   }
 
@@ -250,6 +268,7 @@ export async function checkoutAction(
       paymentStatus: "pendiente_pago",
       paymentMethod: "stripe",
     });
+    await applyOrderInventory(order).catch(() => {});
 
     const h = await headers();
     const host = h.get("host") || "localhost:3000";
@@ -296,6 +315,7 @@ export async function checkoutAction(
 
   // --- Fallback sin Stripe (demo): registra la orden y muestra confirmación ---
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
+  await applyOrderInventory(order).catch(() => {});
   await notifyOrderConfirmation(order).catch(() => {});
   redirect(`/carrito/gracias?o=${order.id}`);
 }
@@ -526,24 +546,15 @@ export async function discoverCandidatesAction(fd: FormData): Promise<void> {
   if (!(await isAdmin())) return;
   const brief = String(fd.get("brief") || "").trim();
   const { candidates } = await brainstormCandidates({ brief, count: 4 });
-  for (const c of candidates) {
-    await createCandidate({
-      name: c.name,
-      emoji: c.emoji || "📦",
-      category: c.category || "General",
-      supplier: c.supplier || "",
-      unitCost: c.unitCost,
-      estRetail: c.estRetail,
-      estWholesale: c.estWholesale,
-      moq: c.moq,
-      trend: c.trend,
-      shipping: c.shipping,
-      stage: "Detectado",
-      signal: c.signal,
-      origin: "app",
-    });
+  // Mismo camino que la extensión: deposita por el brain → abre gate por candidato + bitácora.
+  if (candidates.length) {
+    await ingestPayload(
+      { candidates: candidates.map((c) => ({ ...c, stage: "Detectado" as const, origin: "app" as const })) },
+      { agent: "app" },
+    );
   }
   revalidatePath("/admin");
+  revalidatePath("/admin/aprobaciones");
 }
 
 export async function setCandidateStageAction(fd: FormData): Promise<void> {
@@ -578,6 +589,7 @@ export async function promoteCandidateAction(fd: FormData): Promise<void> {
     name: c.name,
     emoji: c.emoji || draft.emoji,
     gradient: GRADIENT_PRESETS[0],
+    imageUrl: c.imageUrl,
     category: c.category || draft.category,
     tagline: draft.tagline,
     description: draft.description,
@@ -638,15 +650,226 @@ export async function draftOutreachAction(fd: FormData): Promise<void> {
   const sid = String(fd.get("sid") || "");
   const s = await getSupplierById(sid);
   if (!s) return;
+  const channel = s.email ? "email" : "whatsapp";
   const draft = await draftSupplierOutreach({
     supplierName: s.name,
     platform: s.platform,
-    channel: s.email ? "email" : "whatsapp",
+    channel,
   });
   await updateSupplier(sid, {
     outreachDraft: `${draft.subject}\n\n${draft.body}`,
-    status: s.status === "nuevo" ? "contactado" : s.status,
     lastContactedAt: new Date().toISOString(),
   });
+  // Gate: el envío real lo hace la extensión SOLO cuando Miguel aprueba esta tarea.
+  await createTask({
+    kind: "outreach",
+    title: `Enviar outreach: ${s.name}`,
+    summary: `Mensaje redactado (${draft.source}). Aprobar para que la extensión lo envíe en ${s.platform}.`,
+    createdBy: "app",
+    payload: { supplierId: s.id, subject: draft.subject, body: draft.body, channel },
+    relatedType: "supplier",
+    relatedId: s.id,
+  });
+  await logRun({ agent: "app", action: "outreach", summary: `Outreach redactado para ${s.name}`, meta: { supplierId: s.id } });
   revalidatePath("/admin");
+  revalidatePath("/admin/aprobaciones");
+}
+
+// --- Cerebro de control: aprobaciones (admin) ------------------
+export async function approveTaskAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const tid = String(fd.get("tid") || "");
+  const note = String(fd.get("note") || "").trim() || undefined;
+  const task = await getApprovalTaskById(tid);
+  if (!task || task.status !== "pendiente") return;
+  const updated = await updateApprovalTask(tid, {
+    status: "aprobada",
+    decidedAt: new Date().toISOString(),
+    decisionNote: note,
+  });
+  if (updated) {
+    const res = await dispatchApproval(updated);
+    await logRun({
+      agent: "app",
+      action: `aprobar:${updated.kind}`,
+      status: res.ok ? "ok" : "error",
+      summary: `${updated.title} — ${res.message}`,
+      meta: { taskId: tid },
+    });
+  }
+  revalidatePath("/admin/aprobaciones");
+  revalidatePath("/admin");
+}
+
+export async function rejectTaskAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const tid = String(fd.get("tid") || "");
+  const note = String(fd.get("note") || "").trim() || undefined;
+  const task = await getApprovalTaskById(tid);
+  if (!task || task.status !== "pendiente") return;
+  await updateApprovalTask(tid, {
+    status: "rechazada",
+    decidedAt: new Date().toISOString(),
+    decisionNote: note,
+  });
+  await logRun({ agent: "app", action: `rechazar:${task.kind}`, summary: task.title, meta: { taskId: tid } });
+  revalidatePath("/admin/aprobaciones");
+  revalidatePath("/admin");
+}
+
+// --- Loop de compra: órdenes de compra (admin) -----------------
+/** Redacta una orden de compra desde un candidato y abre su gate de aprobación. */
+export async function draftPOFromCandidateAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  const qty = Math.max(1, Math.round(Number(fd.get("qty")) || 0));
+  const c = await getCandidateById(cid);
+  if (!c) return;
+  await draftPurchaseOrder({
+    supplierId: c.supplierId,
+    supplierName: c.supplier || "Suplidor por definir",
+    candidateId: c.id,
+    productId: c.productId,
+    productName: c.name,
+    qty: qty || c.moq || 100,
+    unitCost: c.unitCost,
+    createdBy: "app",
+    notes: c.signal,
+  });
+  if (c.stage === "Detectado" || c.stage === "Evaluando") {
+    await updateCandidate(c.id, { stage: "Negociando" });
+  }
+  revalidatePath("/admin/compras");
+  revalidatePath("/admin/aprobaciones");
+  revalidatePath("/admin");
+}
+
+export async function setPurchaseOrderStatusAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const poId = String(fd.get("poId") || "");
+  const status = String(fd.get("status") || "borrador") as PurchaseOrderStatus;
+  // Recibir sube el inventario del producto enlazado (saldo = suma de movimientos).
+  if (status === "recibida") {
+    await receivePurchaseOrder(poId, "app");
+  } else {
+    await updatePurchaseOrder(poId, { status });
+    await logRun({ agent: "app", action: "po:status", summary: `OC ${poId} → ${status}`, meta: { purchaseOrderId: poId, status } });
+  }
+  revalidatePath("/admin/compras");
+  revalidatePath("/admin/productos");
+}
+
+export async function deletePurchaseOrderAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const poId = String(fd.get("poId") || "");
+  if (poId) await deletePurchaseOrder(poId);
+  revalidatePath("/admin/compras");
+}
+
+// --- Loop físico: embarques (admin) ----------------------------
+export async function createShipmentFromPOAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const poId = String(fd.get("poId") || "");
+  const po = await getPurchaseOrderById(poId);
+  if (!po) return;
+  await createShipment({
+    purchaseOrderId: po.id,
+    productName: po.productName,
+    carrier: String(fd.get("carrier") || "").trim() || undefined,
+    tracking: String(fd.get("tracking") || "").trim() || undefined,
+    createdBy: "app",
+  });
+  if (po.status === "enviada" || po.status === "confirmada" || po.status === "pagada" || po.status === "produccion") {
+    await updatePurchaseOrder(po.id, { status: "embarcada" });
+  }
+  await logRun({ agent: "app", action: "shipment:new", summary: `Embarque para ${po.productName}`, meta: { purchaseOrderId: po.id } });
+  revalidatePath("/admin/compras");
+}
+
+export async function setShipmentStatusAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const sid = String(fd.get("sid") || "");
+  const status = String(fd.get("status") || "preparando") as ShipmentStatus;
+  await updateShipment(sid, { status, updatedAt: new Date().toISOString() });
+  revalidatePath("/admin/compras");
+}
+
+export async function deleteShipmentAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const sid = String(fd.get("sid") || "");
+  if (sid) await deleteShipment(sid);
+  revalidatePath("/admin/compras");
+}
+
+// --- Promociones: campañas (admin) -----------------------------
+export async function createCampaignAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const name = String(fd.get("name") || "").trim();
+  if (!name) return;
+  const discountPercent = Math.min(90, Math.max(0, Number(fd.get("discountPercent")) || 0));
+  const productIds = (fd.getAll("pids") as string[]).filter(Boolean);
+  const segment = (String(fd.get("segment") || "todos").trim() || "todos") as Segment | "todos";
+  const endsAt = String(fd.get("endsAt") || "").trim() || undefined;
+  if (productIds.length === 0 || discountPercent <= 0) return;
+
+  // Copy de marketing best-effort (cae a plantilla sin key de AI).
+  let copy: string | undefined;
+  try {
+    const c = await generateMarketingCopy({
+      name,
+      category: "promoción",
+      audience: segment === "todos" ? "clientes en Puerto Rico" : segment,
+    });
+    copy = `${c.headline}\n${c.caption}`;
+  } catch {
+    copy = undefined;
+  }
+
+  const campaign = await createCampaign({
+    name,
+    productIds,
+    segment,
+    discountPercent,
+    endsAt,
+    copy,
+    createdBy: "app",
+  });
+  // Gate de publicación: aprobar antes de activar el descuento en la tienda.
+  await createTask({
+    kind: "promocion",
+    title: `Aprobar promoción: ${name} (${discountPercent}% off)`,
+    summary: `${productIds.length} productos · segmento ${segment}. Aprobar para activar el descuento en la tienda.`,
+    createdBy: "app",
+    relatedType: "campaign",
+    relatedId: campaign.id,
+    payload: { campaignId: campaign.id },
+  });
+  await logRun({ agent: "app", action: "campaign:new", summary: `Campaña "${name}" (${discountPercent}%)`, meta: { campaignId: campaign.id } });
+  revalidatePath("/admin/promociones");
+  revalidatePath("/admin/aprobaciones");
+}
+
+export async function finalizeCampaignAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  const camp = await getCampaignById(cid);
+  if (!camp) return;
+  await updateCampaign(cid, { status: "finalizada" });
+  // Quita el descuento de los productos de la campaña.
+  for (const pid of camp.productIds) await updateProduct(pid, { discountPercent: 0 });
+  await logRun({ agent: "app", action: "campaign:finalize", summary: `Campaña "${camp.name}" finalizada`, meta: { campaignId: cid } });
+  revalidatePath("/admin/promociones");
+  revalidatePath("/admin/productos");
+}
+
+export async function deleteCampaignAction(fd: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const cid = String(fd.get("cid") || "");
+  const camp = await getCampaignById(cid);
+  if (camp && camp.status === "activa") {
+    for (const pid of camp.productIds) await updateProduct(pid, { discountPercent: 0 });
+  }
+  if (cid) await deleteCampaign(cid);
+  revalidatePath("/admin/promociones");
+  revalidatePath("/admin/productos");
 }

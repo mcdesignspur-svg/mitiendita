@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { ingestPayload, type CandidateInput, type SupplierInput } from "@/lib/ingest";
+import { ingestPayload, type CandidateInput, type SupplierInput, type QuoteInput } from "@/lib/ingest";
+import { operatorAuthorized, operatorBusEnabled } from "@/lib/operator-auth";
+import type { AgentName } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -10,7 +12,7 @@ const MAX_ITEMS = 50;
  * Zapier, etc.) deposita candidatos/suplidores aquí y caen en la MISMA DB que
  * lee la página y el operador.
  *
- *   POST https://mitiendita-six.vercel.app/api/operator/ingest
+ *   POST https://mitienditapr.net/api/operator/ingest
  *   Authorization: Bearer <OPERATOR_INGEST_TOKEN>
  *   Content-Type: application/json
  *   { "candidates": [ { "name": "...", "supplier": "...", "unitCost": 6.8,
@@ -20,30 +22,18 @@ const MAX_ITEMS = 50;
  * Deshabilitado si no hay OPERATOR_INGEST_TOKEN (no abrimos un endpoint de
  * escritura sin secreto).
  */
-function authorized(req: Request): boolean {
-  const expected = process.env.OPERATOR_INGEST_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.get("authorization") || "";
-  const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
-  const token = bearer || req.headers.get("x-operator-token") || "";
-  if (token.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ expected.charCodeAt(i);
-  return diff === 0;
-}
-
 export async function POST(req: Request) {
-  if (!process.env.OPERATOR_INGEST_TOKEN) {
+  if (!operatorBusEnabled()) {
     return NextResponse.json(
       { error: "Ingest deshabilitado: configura OPERATOR_INGEST_TOKEN en el entorno." },
       { status: 503 },
     );
   }
-  if (!authorized(req)) {
+  if (!operatorAuthorized(req)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
-  let body: { candidates?: CandidateInput[]; suppliers?: SupplierInput[] };
+  let body: { candidates?: CandidateInput[]; suppliers?: SupplierInput[]; quotes?: QuoteInput[]; agent?: AgentName };
   try {
     body = await req.json();
   } catch {
@@ -52,11 +42,12 @@ export async function POST(req: Request) {
 
   const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
   const suppliers = Array.isArray(body?.suppliers) ? body.suppliers : [];
+  const quotes = Array.isArray(body?.quotes) ? body.quotes : [];
 
-  if (candidates.length + suppliers.length === 0) {
-    return NextResponse.json({ error: "Nada que ingerir (manda 'candidates' y/o 'suppliers')." }, { status: 400 });
+  if (candidates.length + suppliers.length + quotes.length === 0) {
+    return NextResponse.json({ error: "Nada que ingerir (manda 'candidates', 'suppliers' y/o 'quotes')." }, { status: 400 });
   }
-  if (candidates.length > MAX_ITEMS || suppliers.length > MAX_ITEMS) {
+  if (candidates.length > MAX_ITEMS || suppliers.length > MAX_ITEMS || quotes.length > MAX_ITEMS) {
     return NextResponse.json({ error: `Máximo ${MAX_ITEMS} por tipo por request.` }, { status: 413 });
   }
   for (const c of candidates) {
@@ -71,7 +62,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await ingestPayload({ candidates, suppliers });
+    const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: body.agent ?? "chrome" });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     console.error("[ingest webhook] fallo:", e);

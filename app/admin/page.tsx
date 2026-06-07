@@ -6,6 +6,7 @@ import {
   listGrupos,
   listCandidates,
   listSuppliers,
+  listApprovalTasks,
 } from "@/lib/db";
 import { scoreFor } from "@/lib/sourcing";
 import { aiEnabled } from "@/lib/ai";
@@ -35,6 +36,7 @@ export default async function AdminPage() {
   const grupos = await listGrupos();
   const candidatesRaw = await listCandidates();
   const suppliers = await listSuppliers();
+  const approvalsPendientes = await listApprovalTasks({ status: "pendiente" });
   const activeProducts = products.filter((p) => p.active !== false);
   const gmv = orders.reduce((s, o) => s + o.total, 0);
   const candidates = candidatesRaw
@@ -66,6 +68,7 @@ export default async function AdminPage() {
 
       {/* metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
+        <Metric value={String(approvalsPendientes.length)} label="Aprobaciones" accent="var(--color-coral-deep)" href="/admin/aprobaciones" />
         <Metric value={`${activeProducts.length}/${products.length}`} label="Productos activos" accent="var(--color-teal-deep)" href="/admin/productos" />
         <Metric value={String(grupos.length)} label="Grupos" accent="var(--color-teal)" href="/admin/grupos" />
         <Metric value={String(candidates.length)} label="Candidatos sourcing" accent="var(--color-grape)" />

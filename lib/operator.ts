@@ -14,7 +14,8 @@
  */
 import "./load-env"; // DEBE ir primero: carga .env antes de evaluar lib/db.
 import fs from "node:fs";
-import { listCandidates, listSuppliers, getSupplierById, updateSupplier } from "./db";
+import { listCandidates, listSuppliers, getSupplierById, getCandidateById, updateSupplier } from "./db";
+import { createTask, logRun, draftPurchaseOrder } from "./control";
 import { scoreFor } from "./sourcing";
 import { draftSupplierOutreach } from "./ai";
 import { alibabaEnabled, searchProducts } from "./alibaba";
@@ -31,7 +32,7 @@ async function ingest(file: string) {
     suppliers?: SupplierInput[];
   };
 
-  const result = await ingestPayload(data);
+  const result = await ingestPayload(data, { agent: "operador" });
   for (const s of result.suppliers) console.log(`  + suplidor: ${s.name} (${s.platform})`);
   for (const c of result.candidates) console.log(`  + candidato: ${c.emoji} ${c.name} (score ${c.score})`);
   console.log(
@@ -76,13 +77,57 @@ async function outreach(supplierId: string, productName?: string) {
   });
   await updateSupplier(s.id, {
     outreachDraft: `${draft.subject}\n\n${draft.body}`,
-    status: s.status === "nuevo" ? "contactado" : s.status,
     lastContactedAt: new Date().toISOString(),
   });
-  console.log(`\n✉️  Outreach para ${s.name} (${draft.source}):\n`);
+  // Gate: el envío real lo hace la extensión SOLO cuando Miguel aprueba esta tarea.
+  await createTask({
+    kind: "outreach",
+    title: `Enviar outreach: ${s.name}${productName ? ` · ${productName}` : ""}`,
+    summary: `Mensaje redactado (${draft.source}). Aprobar para que la extensión lo envíe en ${s.platform}.`,
+    createdBy: "operador",
+    payload: {
+      supplierId: s.id,
+      productName,
+      subject: draft.subject,
+      body: draft.body,
+      channel: s.email ? "email" : "whatsapp",
+    },
+    relatedType: "supplier",
+    relatedId: s.id,
+  });
+  await logRun({
+    agent: "operador",
+    action: "outreach",
+    summary: `Outreach redactado para ${s.name} (gate de aprobación creado)`,
+    meta: { supplierId: s.id, productName },
+  });
+  console.log(`\n✉️  Outreach para ${s.name} (${draft.source}) — gate de aprobación creado:\n`);
   console.log(`Asunto: ${draft.subject}\n`);
   console.log(draft.body);
   console.log("");
+}
+
+async function po(candidateId: string, qtyArg?: string) {
+  const c = await getCandidateById(candidateId);
+  if (!c) {
+    console.error(`❌ No existe el candidato ${candidateId}`);
+    process.exit(1);
+  }
+  const qty = Math.max(1, Math.round(Number(qtyArg) || c.moq || 100));
+  const order = await draftPurchaseOrder({
+    supplierId: c.supplierId,
+    supplierName: c.supplier || "Suplidor por definir",
+    candidateId: c.id,
+    productId: c.productId,
+    productName: c.name,
+    qty,
+    unitCost: c.unitCost,
+    createdBy: "operador",
+    notes: c.signal,
+  });
+  console.log(
+    `\n🧾 OC borrador: ${order.qty}× ${order.productName} — $${order.total} · ${order.supplierName}\n   Gate de aprobación creado (visible en /admin/aprobaciones).\n`,
+  );
 }
 
 async function searchAlibaba(query: string) {
@@ -125,12 +170,15 @@ async function main() {
     case "outreach":
       await outreach(rest[0], rest[1]);
       break;
+    case "po":
+      await po(rest[0], rest[1]);
+      break;
     case "alibaba":
       await searchAlibaba(rest.join(" ").trim());
       break;
     default:
       console.log(
-        'Comandos:\n  report                      resumen del pipeline y suplidores\n  ingest <file.json>          añade candidatos y/o suplidores\n  outreach <supplierId> [prod] redacta y guarda el mensaje de contacto\n  alibaba "<búsqueda>"        busca productos reales en Alibaba ICBU (requiere llaves)',
+        'Comandos:\n  report                      resumen del pipeline y suplidores\n  ingest <file.json>          añade candidatos y/o suplidores\n  outreach <supplierId> [prod] redacta y guarda el mensaje de contacto\n  po <candidateId> [qty]      redacta una orden de compra (abre gate de aprobación)\n  alibaba "<búsqueda>"        busca productos reales en Alibaba ICBU (requiere llaves)',
       );
   }
   process.exit(0);

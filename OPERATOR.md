@@ -109,13 +109,30 @@ npm run operator -- outreach <supplierId> "Proyector LED Astronauta"
 ```
 
 Esto redacta el primer mensaje (en inglés por defecto, que es lo que entienden los
-proveedores), lo **guarda** en `supplier.outreachDraft`, marca el suplidor como
-`contactado` y sella `lastContactedAt`. El mensaje pide: precio a MOQ, price-breaks
-por volumen, lead time, costo de muestra y envío a Puerto Rico (USA).
+proveedores), lo **guarda** en `supplier.outreachDraft`, sella `lastContactedAt` y
+**abre un gate de aprobación** (`ApprovalTask` kind `outreach`) en `/admin/aprobaciones`.
+El mensaje pide: precio a MOQ, price-breaks por volumen, lead time, costo de muestra
+y envío a Puerto Rico (USA).
 
-El **envío real** se hace por el canal configurado (Resend para email cuando exista
-`RESEND_API_KEY`; WhatsApp más adelante). Mientras tanto dejo el borrador listo para
-copiar/pegar o para que el humano lo apruebe.
+El **envío real NO es automático**: cuando Miguel aprueba el gate, la tarea queda en
+la cola del *brief* y la extensión de Chrome la recoge y la envía en Alibaba (luego
+reporta con `POST /api/operator/queue/<id>/done`). Ver el cerebro de control en
+[`OPERATIONS.md`](OPERATIONS.md).
+
+---
+
+## Cómo redacto una orden de compra
+
+```bash
+npm run operator -- po <candidateId> [qty]
+```
+
+Redacta una OC borrador desde un candidato (usa su suplidor y `unitCost`), calcula el
+total y **abre un gate `orden_compra`** en `/admin/aprobaciones`. Al aprobarlo, la OC
+pasa a `enviada`. Cuando la mercancía llega, marcar la OC como `recibida` (en
+`/admin/compras`) **sube el inventario** del producto enlazado. Todo el loop de compra
+y físico (cotizaciones, embarques, inventario, promociones, cron) está en
+[`OPERATIONS.md`](OPERATIONS.md) §5.
 
 ---
 

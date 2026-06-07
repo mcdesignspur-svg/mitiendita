@@ -2,10 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import type {
+  AgentRun,
+  ApprovalStatus,
+  ApprovalTask,
   Business,
+  Campaign,
+  CampaignStatus,
   Grupo,
+  InventoryMovement,
   Order,
   Product,
+  PurchaseOrder,
+  PurchaseOrderStatus,
+  Quote,
+  Shipment,
+  ShipmentStatus,
   SourcingCandidate,
   Supplier,
   SupplierStatus,
@@ -30,6 +41,13 @@ interface DB {
   grupos: Grupo[];
   sourcingCandidates: SourcingCandidate[];
   suppliers: Supplier[];
+  approvalTasks: ApprovalTask[];
+  agentRuns: AgentRun[];
+  quotes: Quote[];
+  purchaseOrders: PurchaseOrder[];
+  shipments: Shipment[];
+  inventoryMovements: InventoryMovement[];
+  campaigns: Campaign[];
 }
 
 function seed(): DB {
@@ -68,6 +86,13 @@ function seed(): DB {
     grupos: SEED_GRUPOS,
     sourcingCandidates: SEED_CANDIDATES,
     suppliers: SEED_SUPPLIERS,
+    approvalTasks: [],
+    agentRuns: [],
+    quotes: [],
+    purchaseOrders: [],
+    shipments: [],
+    inventoryMovements: [],
+    campaigns: [],
   };
 }
 
@@ -95,6 +120,13 @@ function migrate(db: Partial<DB>): DB {
     grupos: db.grupos ?? [],
     sourcingCandidates: db.sourcingCandidates ?? [],
     suppliers: db.suppliers ?? [],
+    approvalTasks: db.approvalTasks ?? [],
+    agentRuns: db.agentRuns ?? [],
+    quotes: db.quotes ?? [],
+    purchaseOrders: db.purchaseOrders ?? [],
+    shipments: db.shipments ?? [],
+    inventoryMovements: db.inventoryMovements ?? [],
+    campaigns: db.campaigns ?? [],
   };
   let dirty = false;
   if (!db.products || db.products.length === 0) {
@@ -113,6 +145,35 @@ function migrate(db: Partial<DB>): DB {
   }
   if (db.suppliers === undefined) {
     full.suppliers = SEED_SUPPLIERS;
+    dirty = true;
+  }
+  // Cerebro de control: arrancan vacíos en stores viejos.
+  if (db.approvalTasks === undefined) {
+    full.approvalTasks = [];
+    dirty = true;
+  }
+  if (db.agentRuns === undefined) {
+    full.agentRuns = [];
+    dirty = true;
+  }
+  if (db.quotes === undefined) {
+    full.quotes = [];
+    dirty = true;
+  }
+  if (db.purchaseOrders === undefined) {
+    full.purchaseOrders = [];
+    dirty = true;
+  }
+  if (db.shipments === undefined) {
+    full.shipments = [];
+    dirty = true;
+  }
+  if (db.inventoryMovements === undefined) {
+    full.inventoryMovements = [];
+    dirty = true;
+  }
+  if (db.campaigns === undefined) {
+    full.campaigns = [];
     dirty = true;
   }
   if (dirty) write(full);
@@ -418,6 +479,241 @@ export async function deleteSupplier(sid: string): Promise<boolean> {
   const before = db.suppliers.length;
   db.suppliers = db.suppliers.filter((s) => s.id !== sid);
   const removed = db.suppliers.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Approval tasks (cerebro de control) ------------------------
+export async function listApprovalTasks(
+  opts: { status?: ApprovalStatus } = {},
+): Promise<ApprovalTask[]> {
+  const all = read().approvalTasks.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return opts.status ? all.filter((t) => t.status === opts.status) : all;
+}
+
+export async function getApprovalTaskById(tid: string): Promise<ApprovalTask | undefined> {
+  return read().approvalTasks.find((t) => t.id === tid);
+}
+
+export async function createApprovalTask(
+  input: Omit<ApprovalTask, "id" | "createdAt" | "status"> & { status?: ApprovalStatus },
+): Promise<ApprovalTask> {
+  const db = read();
+  const task: ApprovalTask = {
+    ...input,
+    status: input.status ?? "pendiente",
+    id: id("at"),
+    createdAt: new Date().toISOString(),
+  };
+  db.approvalTasks.push(task);
+  write(db);
+  return task;
+}
+
+export async function updateApprovalTask(
+  tid: string,
+  patch: Partial<ApprovalTask>,
+): Promise<ApprovalTask | undefined> {
+  const db = read();
+  const t = db.approvalTasks.find((x) => x.id === tid);
+  if (!t) return undefined;
+  Object.assign(t, patch);
+  write(db);
+  return t;
+}
+
+export async function deleteApprovalTask(tid: string): Promise<boolean> {
+  const db = read();
+  const before = db.approvalTasks.length;
+  db.approvalTasks = db.approvalTasks.filter((t) => t.id !== tid);
+  const removed = db.approvalTasks.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Agent runs (bitácora) --------------------------------------
+export async function listAgentRuns(limit = 50): Promise<AgentRun[]> {
+  return read()
+    .agentRuns.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, limit);
+}
+
+export async function createAgentRun(input: Omit<AgentRun, "id" | "createdAt">): Promise<AgentRun> {
+  const db = read();
+  const run: AgentRun = { ...input, id: id("run"), createdAt: new Date().toISOString() };
+  db.agentRuns.push(run);
+  write(db);
+  return run;
+}
+
+// --- Quotes (cotizaciones) --------------------------------------
+export async function listQuotes(): Promise<Quote[]> {
+  return read().quotes.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function createQuote(input: Omit<Quote, "id" | "createdAt">): Promise<Quote> {
+  const db = read();
+  const quote: Quote = { ...input, id: id("q"), createdAt: new Date().toISOString() };
+  db.quotes.push(quote);
+  write(db);
+  return quote;
+}
+
+export async function deleteQuote(qid: string): Promise<boolean> {
+  const db = read();
+  const before = db.quotes.length;
+  db.quotes = db.quotes.filter((q) => q.id !== qid);
+  const removed = db.quotes.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Purchase orders (órdenes de compra) ------------------------
+export async function listPurchaseOrders(): Promise<PurchaseOrder[]> {
+  return read().purchaseOrders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getPurchaseOrderById(pid: string): Promise<PurchaseOrder | undefined> {
+  return read().purchaseOrders.find((p) => p.id === pid);
+}
+
+export async function createPurchaseOrder(
+  input: Omit<PurchaseOrder, "id" | "createdAt" | "status"> & { status?: PurchaseOrderStatus },
+): Promise<PurchaseOrder> {
+  const db = read();
+  const po: PurchaseOrder = {
+    ...input,
+    status: input.status ?? "borrador",
+    id: id("po"),
+    createdAt: new Date().toISOString(),
+  };
+  db.purchaseOrders.push(po);
+  write(db);
+  return po;
+}
+
+export async function updatePurchaseOrder(
+  pid: string,
+  patch: Partial<PurchaseOrder>,
+): Promise<PurchaseOrder | undefined> {
+  const db = read();
+  const p = db.purchaseOrders.find((x) => x.id === pid);
+  if (!p) return undefined;
+  Object.assign(p, patch);
+  write(db);
+  return p;
+}
+
+export async function deletePurchaseOrder(pid: string): Promise<boolean> {
+  const db = read();
+  const before = db.purchaseOrders.length;
+  db.purchaseOrders = db.purchaseOrders.filter((p) => p.id !== pid);
+  const removed = db.purchaseOrders.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Shipments (embarques) --------------------------------------
+export async function listShipments(): Promise<Shipment[]> {
+  return read().shipments.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function createShipment(
+  input: Omit<Shipment, "id" | "createdAt" | "status"> & { status?: ShipmentStatus },
+): Promise<Shipment> {
+  const db = read();
+  const shipment: Shipment = {
+    ...input,
+    status: input.status ?? "preparando",
+    id: id("sh"),
+    createdAt: new Date().toISOString(),
+  };
+  db.shipments.push(shipment);
+  write(db);
+  return shipment;
+}
+
+export async function updateShipment(
+  sid: string,
+  patch: Partial<Shipment>,
+): Promise<Shipment | undefined> {
+  const db = read();
+  const s = db.shipments.find((x) => x.id === sid);
+  if (!s) return undefined;
+  Object.assign(s, patch);
+  write(db);
+  return s;
+}
+
+export async function deleteShipment(sid: string): Promise<boolean> {
+  const db = read();
+  const before = db.shipments.length;
+  db.shipments = db.shipments.filter((s) => s.id !== sid);
+  const removed = db.shipments.length < before;
+  if (removed) write(db);
+  return removed;
+}
+
+// --- Inventory movements (inventario) ---------------------------
+export async function listInventoryMovements(
+  opts: { productId?: string; limit?: number } = {},
+): Promise<InventoryMovement[]> {
+  let all = read().inventoryMovements.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (opts.productId) all = all.filter((m) => m.productId === opts.productId);
+  return all.slice(0, opts.limit ?? 200);
+}
+
+export async function createInventoryMovement(
+  input: Omit<InventoryMovement, "id" | "createdAt">,
+): Promise<InventoryMovement> {
+  const db = read();
+  const mv: InventoryMovement = { ...input, id: id("mv"), createdAt: new Date().toISOString() };
+  db.inventoryMovements.push(mv);
+  write(db);
+  return mv;
+}
+
+// --- Campaigns (promociones) ------------------------------------
+export async function listCampaigns(): Promise<Campaign[]> {
+  return read().campaigns.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getCampaignById(cid: string): Promise<Campaign | undefined> {
+  return read().campaigns.find((c) => c.id === cid);
+}
+
+export async function createCampaign(
+  input: Omit<Campaign, "id" | "createdAt" | "status"> & { status?: CampaignStatus },
+): Promise<Campaign> {
+  const db = read();
+  const campaign: Campaign = {
+    ...input,
+    status: input.status ?? "borrador",
+    id: id("camp"),
+    createdAt: new Date().toISOString(),
+  };
+  db.campaigns.push(campaign);
+  write(db);
+  return campaign;
+}
+
+export async function updateCampaign(
+  cid: string,
+  patch: Partial<Campaign>,
+): Promise<Campaign | undefined> {
+  const db = read();
+  const c = db.campaigns.find((x) => x.id === cid);
+  if (!c) return undefined;
+  Object.assign(c, patch);
+  write(db);
+  return c;
+}
+
+export async function deleteCampaign(cid: string): Promise<boolean> {
+  const db = read();
+  const before = db.campaigns.length;
+  db.campaigns = db.campaigns.filter((c) => c.id !== cid);
+  const removed = db.campaigns.length < before;
   if (removed) write(db);
   return removed;
 }
