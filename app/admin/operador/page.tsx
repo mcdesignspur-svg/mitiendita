@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { buildBrief } from "@/lib/control";
 import { operatorIngestAction, markQueueDoneAction } from "@/lib/actions";
+import { CHROME_AGENT_PROMPT } from "@/lib/chrome-playbook";
+import { CopyPrompt } from "@/components/copy-prompt";
 
 export const metadata = { title: "Consola del operador — Mi Tiendita PR" };
 
@@ -79,6 +81,18 @@ export default async function OperadorPage({
           {fb.ok ? "✅ " : "⚠️ "}{fb.msg}
         </div>
       )}
+
+      {/* 0) Prompt para la extensión */}
+      <section className="mb-10">
+        <div className="card p-5">
+          <h2 className="font-display text-2xl mb-1">Prompt para la extensión 📋</h2>
+          <p className="text-sm mb-4" style={{ color: "var(--color-ink-soft)" }}>
+            Cópialo y pégalo como tarea en el sidebar de Claude-en-Chrome (debes estar logueado en /admin
+            en este mismo navegador). Ese es su cerebro de operación.
+          </p>
+          <CopyPrompt text={CHROME_AGENT_PROMPT} />
+        </div>
+      </section>
 
       {/* 1) Cola de outreach aprobada */}
       <section className="mb-10">

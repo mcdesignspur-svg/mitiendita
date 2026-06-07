@@ -60,7 +60,8 @@ export async function setAdminSession(): Promise<void> {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    // 30 días: que la consola del operador sobreviva entre corridas del agente.
+    maxAge: 60 * 60 * 24 * 30,
   });
 }
 
