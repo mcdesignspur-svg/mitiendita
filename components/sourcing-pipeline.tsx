@@ -171,7 +171,7 @@ function StageControls({ c }: { c: Candidate }) {
 function CandidateCard({ c }: { c: Candidate }) {
   const margin = c.estRetail > 0 ? (c.estRetail - c.unitCost) / c.estRetail : 0;
   return (
-    <div className="card p-5">
+    <div id={`cand-${c.id}`} className="card p-5" style={{ scrollMarginTop: "5rem" }}>
       <div className="flex items-start justify-between mb-3">
         <span className="text-3xl">{c.emoji}</span>
         <div className="flex flex-col items-end gap-1">
@@ -205,7 +205,7 @@ function CandidateCard({ c }: { c: Candidate }) {
       <p className="text-xs mt-3 font-semibold" style={{ color: "var(--color-teal-deep)" }}>
         📈 {c.signal}
       </p>
-      {c.sourceUrl && (
+      {c.sourceUrl ? (
         <a
           href={c.sourceUrl}
           target="_blank"
@@ -215,6 +215,14 @@ function CandidateCard({ c }: { c: Candidate }) {
         >
           🔗 Ver en Alibaba
         </a>
+      ) : (
+        <span
+          className="text-xs font-semibold inline-flex items-center gap-1 mt-2"
+          style={{ color: "var(--color-coral-deep)" }}
+          title="Este candidato llegó sin enlace directo al producto"
+        >
+          ⚠️ sin enlace directo
+        </span>
       )}
 
       <div className="flex flex-wrap gap-2 mt-4 items-center">
@@ -227,7 +235,7 @@ function CandidateCard({ c }: { c: Candidate }) {
 function CandidateRow({ c }: { c: Candidate }) {
   const margin = c.estRetail > 0 ? (c.estRetail - c.unitCost) / c.estRetail : 0;
   return (
-    <div className="card-flat px-4 py-3 flex items-center gap-4 flex-wrap">
+    <div id={`cand-${c.id}`} className="card-flat px-4 py-3 flex items-center gap-4 flex-wrap" style={{ scrollMarginTop: "5rem" }}>
       <span className="text-2xl shrink-0">{c.emoji}</span>
 
       <div className="min-w-0 flex-1" style={{ flexBasis: "14rem" }}>
@@ -241,6 +249,14 @@ function CandidateRow({ c }: { c: Candidate }) {
         </div>
         <p className="text-xs truncate" style={{ color: "var(--color-muted)" }}>
           {c.supplier || "sin suplidor"} · <span style={{ color: "var(--color-teal-deep)" }}>📈 {c.signal}</span>
+          {" · "}
+          {c.sourceUrl ? (
+            <a href={c.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: "var(--color-grape)" }}>
+              🔗 Alibaba
+            </a>
+          ) : (
+            <span className="font-semibold" style={{ color: "var(--color-coral-deep)" }}>⚠️ sin enlace</span>
+          )}
         </p>
       </div>
 

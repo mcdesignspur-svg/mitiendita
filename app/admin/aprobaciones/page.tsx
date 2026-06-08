@@ -27,7 +27,9 @@ function relatedHref(t: ApprovalTask): string | null {
   if (t.relatedType === "product") return `/admin/productos/${t.relatedId}`;
   if (t.relatedType === "purchase_order") return "/admin/compras";
   if (t.relatedType === "campaign") return "/admin/promociones";
-  if (t.relatedType === "candidate" || t.relatedType === "supplier") return "/admin";
+  // Deep-link directo al candidato en el pipeline de sourcing (ancla en /admin).
+  if (t.relatedType === "candidate") return `/admin#cand-${t.relatedId}`;
+  if (t.relatedType === "supplier") return "/admin";
   return null;
 }
 

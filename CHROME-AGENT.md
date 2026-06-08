@@ -36,9 +36,14 @@ No contactes a ningún suplidor que **no** esté en esta cola.
    retail ~3–4× el costo, MOQ alcanzable, baja fricción logística.
 2. **Respeta el surtido**: NADA de belleza, bienestar, skincare, suplementos ni salud.
 3. **No dupliques** lo que ya está en "ya conocido".
-4. Junta hasta **`maxPerRun`** candidatos buenos. Para cada uno captura: nombre, foto
-   (`imageUrl`), enlace (`sourceUrl`), costo unitario estimado, MOQ, y el nombre del
-   suplidor. Marca los precios como **estimados** (no inventes "confirmados").
+4. Junta hasta **`maxPerRun`** candidatos buenos. Para cada uno **entra a la página del
+   producto** y captura: nombre, **`sourceUrl` = el enlace directo a ESA página**
+   (la URL de la barra, ej. `https://www.alibaba.com/product-detail/...`), foto
+   (`imageUrl`), costo unitario estimado, MOQ, y el nombre del suplidor. Precios
+   **estimados** (no inventes "confirmados").
+   - ⚠️ **`sourceUrl` es OBLIGATORIO** en cada candidato — es el enlace que Miguel abre
+     para revisar. No uses el enlace de la búsqueda/categoría. Si no hay URL de detalle
+     válida, **no deposites** ese producto.
 
 ### Paso 3 — Deposita los hallazgos
 En **"3 · Depositar hallazgos"** pega un JSON con este formato y pulsa **Depositar**:
