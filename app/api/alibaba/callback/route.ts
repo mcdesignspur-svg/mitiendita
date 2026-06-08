@@ -8,7 +8,7 @@ export const runtime = "nodejs";
  * Callback de OAuth de la Alibaba.com Open Platform.
  *
  * Registra esta URL como "Callback/Redirect URL" de tu app:
- *   https://mitiendita-six.vercel.app/api/alibaba/callback
+ *   https://mitienditapr.net/api/alibaba/callback
  *
  * Tras autorizar la app, Alibaba redirige aquí con `?code=...` (auth_code).
  * Esta ruta lo cambia por un access_token (vía /auth/token/create) y te muestra

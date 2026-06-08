@@ -11,7 +11,7 @@ async function main() {
   } catch {
     /* ignore */
   }
-  const base = process.env.ATH_WEBHOOK_BASE || "https://mitiendita-six.vercel.app";
+  const base = process.env.ATH_WEBHOOK_BASE || "https://mitienditapr.net";
   const url = `${base}/api/ath/webhook`;
   console.log("Suscribiendo webhook ATH Móvil →", url);
 

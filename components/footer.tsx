@@ -5,14 +5,9 @@ export function Footer() {
     <footer className="mt-24 border-t-2" style={{ borderColor: "var(--color-ink)", background: "var(--color-cream-2)" }}>
       <div className="wrap py-14 grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className="grid place-items-center w-9 h-9 rounded-xl text-lg"
-              style={{ background: "var(--color-coral)", border: "2px solid var(--color-ink)" }}
-            >
-              🛒
-            </span>
-            <span className="font-display text-xl font-bold">Mi Tiendita PR</span>
+          <div className="mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Mi Tiendita PR" className="h-10 w-auto" />
           </div>
           <p className="text-sm max-w-xs" style={{ color: "var(--color-ink-soft)" }}>
             Importamos productos virales y de alta utilidad para individuos y negocios en todo

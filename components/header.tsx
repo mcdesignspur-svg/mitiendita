@@ -41,20 +41,9 @@ export function Header({ session }: { session: SessionSummary | null }) {
         }}
       >
         <div className="wrap flex items-center justify-between h-16 gap-4">
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <span
-              className="grid place-items-center w-9 h-9 rounded-xl text-lg"
-              style={{
-                background: "var(--color-coral)",
-                border: "2px solid var(--color-ink)",
-                boxShadow: "var(--shadow-pop-sm)",
-              }}
-            >
-              🛒
-            </span>
-            <span className="font-display text-xl font-bold leading-none">
-              Mi Tiendita<span style={{ color: "var(--color-coral)" }}> PR</span>
-            </span>
+          <Link href="/" className="flex items-center shrink-0" aria-label="Mi Tiendita PR — Inicio">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Mi Tiendita PR" className="h-9 w-auto" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

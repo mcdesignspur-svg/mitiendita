@@ -26,7 +26,7 @@ export function CopyStudio({
           onChange={(e) => setIdx(Number(e.target.value))}
         >
           {products.map((p, i) => (
-            <option key={p.id} value={i}>{p.name}</option>
+            <option key={i} value={i}>{p.name}</option>
           ))}
         </select>
 
