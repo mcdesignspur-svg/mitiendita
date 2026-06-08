@@ -364,12 +364,26 @@ function parseProductForm(fd: FormData): {
     .map((t) => t.trim().toLowerCase())
     .filter(Boolean);
 
+  // Galería de fotos: viene como JSON en un campo oculto. La primera es la portada.
+  let imageUrls: string[] = [];
+  try {
+    const parsed = JSON.parse(String(fd.get("imageUrls") || "[]"));
+    if (Array.isArray(parsed)) {
+      imageUrls = parsed.filter((u): u is string => typeof u === "string" && !!u.trim());
+    }
+  } catch {
+    imageUrls = [];
+  }
+  const cover = imageUrls[0] || String(fd.get("imageUrl") || "").trim() || undefined;
+  if (cover && !imageUrls.includes(cover)) imageUrls = [cover, ...imageUrls];
+
   const value: Omit<Product, "id" | "slug"> & { slug?: string } = {
     name,
     slug: String(fd.get("slug") || "").trim() || undefined,
     emoji: String(fd.get("emoji") || "📦").trim() || "📦",
     gradient: String(fd.get("gradient") || "linear-gradient(135deg,#ff5a36,#ffc53d)"),
-    imageUrl: String(fd.get("imageUrl") || "").trim() || undefined,
+    imageUrl: cover,
+    imageUrls,
     category: String(fd.get("category") || "General").trim() || "General",
     grupoIds,
     tagline: String(fd.get("tagline") || "").trim(),
@@ -590,6 +604,7 @@ export async function promoteCandidateAction(fd: FormData): Promise<void> {
     emoji: c.emoji || draft.emoji,
     gradient: GRADIENT_PRESETS[0],
     imageUrl: c.imageUrl,
+    imageUrls: c.imageUrl ? [c.imageUrl] : [],
     category: c.category || draft.category,
     tagline: draft.tagline,
     description: draft.description,

@@ -17,6 +17,7 @@ export const products = pgTable("products", {
   emoji: text("emoji").notNull().default("📦"),
   gradient: text("gradient").notNull().default(""),
   imageUrl: text("image_url"),
+  imageUrls: jsonb("image_urls").$type<string[]>().notNull().default([]),
   category: text("category").notNull().default("General"),
   grupoIds: jsonb("grupo_ids").$type<string[]>().notNull().default([]),
   tagline: text("tagline").notNull().default(""),

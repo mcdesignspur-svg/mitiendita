@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getProductBySlug, relatedProducts } from "@/lib/db";
 import { getSessionBusiness } from "@/lib/auth";
+import { productImages } from "@/lib/products";
 import { ProductDetailBuy } from "@/components/product-detail-buy";
+import { ProductGallery } from "@/components/product-gallery";
 import { ProductCard } from "@/components/product-card";
 
 export async function generateMetadata({
@@ -45,14 +47,12 @@ export default async function ProductPage({
       <div className="grid lg:grid-cols-2 gap-10">
         {/* visual */}
         <div>
-          <div className="card aspect-square overflow-hidden relative" style={{ background: product.gradient }}>
-            {product.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.imageUrl} alt={product.name} className="absolute inset-0 w-full h-full object-cover" />
-            ) : (
-              <span className="absolute inset-0 grid place-items-center text-[10rem] drop-shadow-xl">{product.emoji}</span>
-            )}
-          </div>
+          <ProductGallery
+            images={productImages(product)}
+            gradient={product.gradient}
+            emoji={product.emoji}
+            name={product.name}
+          />
           <div className="flex flex-wrap gap-2 mt-4">
             {product.badges.map((b) => (
               <span key={b} className={`badge badge-${b}`}>

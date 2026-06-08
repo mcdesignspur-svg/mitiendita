@@ -57,6 +57,7 @@ function toProduct(r: ProductRow): Product {
     emoji: r.emoji,
     gradient: r.gradient,
     imageUrl: r.imageUrl ?? undefined,
+    imageUrls: r.imageUrls ?? [],
     category: r.category,
     grupoIds: r.grupoIds ?? [],
     tagline: r.tagline,

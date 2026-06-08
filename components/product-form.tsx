@@ -9,6 +9,7 @@ import {
   BADGE_OPTIONS,
   SEGMENT_OPTIONS,
   DEFAULT_CATEGORIES,
+  productImages,
 } from "@/lib/products";
 import {
   createProductAction,
@@ -16,7 +17,7 @@ import {
   aiProductDraftAction,
   type FormState,
 } from "@/lib/actions";
-import { ImageEditor } from "./image-editor";
+import { ImageGallery } from "./image-gallery";
 
 export function ProductForm({
   mode,
@@ -36,7 +37,8 @@ export function ProductForm({
   const [name, setName] = useState(product?.name ?? "");
   const [emoji, setEmoji] = useState(product?.emoji ?? "📦");
   const [gradient, setGradient] = useState(product?.gradient ?? GRADIENT_PRESETS[0]);
-  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [imageUrls, setImageUrls] = useState<string[]>(product ? productImages(product) : []);
+  const imageUrl = imageUrls[0] ?? ""; // portada (primera foto)
   const [tagline, setTagline] = useState(product?.tagline ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
@@ -253,16 +255,18 @@ export function ProductForm({
           </div>
         </fieldset>
 
-        {/* Imagen */}
+        {/* Fotos */}
         <fieldset className="card p-6">
-          <legend className="font-display text-xl px-2">Imagen del producto</legend>
+          <legend className="font-display text-xl px-2">Fotos del producto</legend>
+          <input type="hidden" name="imageUrls" value={JSON.stringify(imageUrls)} />
           <input type="hidden" name="imageUrl" value={imageUrl} />
           <input type="hidden" name="gradient" value={gradient} />
 
           <p className="text-sm mb-3 mt-2" style={{ color: "var(--color-ink-soft)" }}>
-            Sube una foto real (recomendado). Se recorta a cuadrado con el editor.
+            Sube varias fotos (recomendado). La primera es la portada y se arma un
+            carrusel en la página del producto. Cada foto se recorta a cuadrado.
           </p>
-          <ImageEditor value={imageUrl} onChange={setImageUrl} />
+          <ImageGallery value={imageUrls} onChange={setImageUrls} />
 
           <p className="text-sm mb-2 mt-6 font-semibold" style={{ color: "var(--color-ink-soft)" }}>
             Fondo de respaldo

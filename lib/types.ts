@@ -9,8 +9,10 @@ export interface Product {
   emoji: string;
   /** CSS gradient used as the product "photo" placeholder (fallback). */
   gradient: string;
-  /** URL de la imagen real del producto (Vercel Blob). Si falta, se usa gradient+emoji. */
+  /** URL de la imagen principal/portada (Vercel Blob). Si falta, se usa gradient+emoji. */
   imageUrl?: string;
+  /** Galería de fotos del producto (carrusel). La primera es la portada (== imageUrl). */
+  imageUrls?: string[];
   category: string;
   tagline: string;
   description: string;

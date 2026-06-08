@@ -408,6 +408,15 @@ export function isActive(p: Product): boolean {
 export function shippingOf(p: Product): number {
   return p.shippingPrice ?? 0;
 }
+/**
+ * Galería de fotos del producto (para el carrusel). Tolera productos viejos que
+ * solo tienen `imageUrl`. La primera foto es la portada. Devuelve [] si no hay.
+ */
+export function productImages(p: Product): string[] {
+  const list = (p.imageUrls ?? []).filter(Boolean);
+  if (list.length) return list;
+  return p.imageUrl ? [p.imageUrl] : [];
+}
 
 // --- Opciones para los formularios del admin ---
 export const DEFAULT_CATEGORIES = [

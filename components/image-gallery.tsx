@@ -4,14 +4,21 @@ import { useRef, useState } from "react";
 
 const FRAME = 300; // tamaño del recuadro de recorte en px
 const OUT = 1000; // tamaño de salida (cuadrado) en px
+const MAX = 8; // máximo de fotos por producto
 
-export function ImageEditor({
+/**
+ * Editor de galería de producto: sube varias fotos (cada una se recorta a
+ * cuadrado), reordena y define la portada. La primera foto es la portada.
+ * Maneja `value: string[]` y serializa al formulario por el padre.
+ */
+export function ImageGallery({
   value,
   onChange,
 }: {
-  value: string;
-  onChange: (url: string) => void;
+  value: string[];
+  onChange: (urls: string[]) => void;
 }) {
+  // Vista del recortador (cuando se eligió un archivo)
   const [src, setSrc] = useState<string | null>(null);
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -115,7 +122,7 @@ export function ImageEditor({
       const r = await fetch("/api/admin/upload", { method: "POST", body: fd });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Error al subir.");
-      onChange(data.url);
+      onChange([...value, data.url].slice(0, MAX));
       cleanup();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al subir la imagen.");
@@ -130,7 +137,25 @@ export function ImageEditor({
     setImg(null);
   }
 
-  // --- Render ---------------------------------------------------
+  // --- Acciones sobre la galería --------------------------------
+  function removeAt(i: number) {
+    onChange(value.filter((_, idx) => idx !== i));
+  }
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= value.length) return;
+    const next = [...value];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  }
+  function makeCover(i: number) {
+    if (i === 0) return;
+    const next = [...value];
+    const [pic] = next.splice(i, 1);
+    onChange([pic, ...next]);
+  }
+
+  // --- Render: recortador ---------------------------------------
   if (src && img) {
     const { dw, dh } = dims(img, zoom);
     return (
@@ -150,7 +175,6 @@ export function ImageEditor({
             draggable={false}
             style={{ position: "absolute", left: offset.x, top: offset.y, width: dw, height: dh, maxWidth: "none" }}
           />
-          <div className="pointer-events-none absolute inset-0" style={{ boxShadow: "inset 0 0 0 9999px rgba(0,0,0,0)" }} />
         </div>
 
         <div className="flex items-center gap-3 mt-3">
@@ -173,7 +197,7 @@ export function ImageEditor({
 
         <div className="flex gap-2 mt-3">
           <button type="button" onClick={save} disabled={uploading} className="btn btn-primary btn-sm">
-            {uploading ? "Subiendo…" : "Guardar imagen"}
+            {uploading ? "Subiendo…" : "Añadir foto"}
           </button>
           <button type="button" onClick={cleanup} disabled={uploading} className="btn btn-ghost btn-sm">
             Cancelar
@@ -183,40 +207,94 @@ export function ImageEditor({
     );
   }
 
+  // --- Render: galería ------------------------------------------
   return (
     <div>
       <input ref={fileRef} type="file" accept="image/*" onChange={pickFile} className="hidden" />
-      {value ? (
-        <div className="flex items-center gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt="producto"
-            className="w-24 h-24 rounded-xl object-cover"
-            style={{ border: "2px solid var(--color-ink)" }}
-          />
-          <div className="flex flex-col gap-2">
-            <button type="button" onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">
-              Cambiar imagen
-            </button>
-            <button type="button" onClick={() => onChange("")} className="btn btn-ghost btn-sm" style={{ color: "var(--color-coral-deep)" }}>
-              Quitar imagen
-            </button>
-          </div>
+
+      {value.length > 0 && (
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-4">
+          {value.map((url, i) => (
+            <div
+              key={url + i}
+              className="relative rounded-xl overflow-hidden group"
+              style={{ border: i === 0 ? "3px solid var(--color-ink)" : "2px solid var(--color-line)" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Foto ${i + 1}`} className="aspect-square w-full object-cover" />
+
+              {i === 0 && (
+                <span
+                  className="absolute top-1 left-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ background: "var(--color-ink)", color: "#fff" }}
+                >
+                  Portada
+                </span>
+              )}
+
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 p-1.5 bg-black/45 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <IconBtn label="Mover izquierda" disabled={i === 0} onClick={() => move(i, -1)}>◀</IconBtn>
+                {i !== 0 && (
+                  <IconBtn label="Hacer portada" onClick={() => makeCover(i)}>★</IconBtn>
+                )}
+                <IconBtn label="Mover derecha" disabled={i === value.length - 1} onClick={() => move(i, 1)}>▶</IconBtn>
+                <IconBtn label="Quitar foto" danger onClick={() => removeAt(i)}>✕</IconBtn>
+              </div>
+            </div>
+          ))}
         </div>
-      ) : (
+      )}
+
+      {value.length < MAX ? (
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="w-full rounded-xl py-8 text-center"
+          className="w-full rounded-xl py-6 text-center"
           style={{ border: "2px dashed var(--color-line)", background: "var(--color-cream-2)" }}
         >
           <div className="text-3xl mb-1">🖼️</div>
-          <div className="font-semibold text-sm">Subir imagen del producto</div>
-          <div className="text-xs" style={{ color: "var(--color-muted)" }}>JPG o PNG · se recorta a cuadrado</div>
+          <div className="font-semibold text-sm">
+            {value.length === 0 ? "Subir fotos del producto" : "Añadir otra foto"}
+          </div>
+          <div className="text-xs" style={{ color: "var(--color-muted)" }}>
+            JPG o PNG · se recorta a cuadrado · hasta {MAX} fotos
+          </div>
         </button>
+      ) : (
+        <p className="text-xs text-center py-2" style={{ color: "var(--color-muted)" }}>
+          Llegaste al máximo de {MAX} fotos. Quita una para añadir otra.
+        </p>
       )}
+
       {error && <p className="text-sm mt-2 font-semibold" style={{ color: "var(--color-coral-deep)" }}>⚠ {error}</p>}
     </div>
+  );
+}
+
+function IconBtn({
+  children,
+  label,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="grid place-items-center w-7 h-7 rounded-full text-xs font-bold disabled:opacity-30 transition-colors"
+      style={{ background: "#fff", color: danger ? "var(--color-coral-deep)" : "var(--color-ink)" }}
+    >
+      {children}
+    </button>
   );
 }
