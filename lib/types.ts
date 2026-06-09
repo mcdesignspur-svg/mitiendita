@@ -152,7 +152,7 @@ export interface SourcingCandidate {
   /** Por qué es candidato (la señal que lo detectó). */
   signal: string;
   sourceUrl?: string;
-  /** Foto del producto que trae la extensión scrapeando Alibaba (opcional). */
+  /** Foto del producto que trae Hermes scrapeando Alibaba (opcional). */
   imageUrl?: string;
   notes?: string;
   /** Origen: "agente" = lo trajo Claude investigando; "app"/"manual" = panel. */
@@ -164,12 +164,16 @@ export interface SourcingCandidate {
 
 // ===========================================================================
 // Cerebro de control: la cola de aprobaciones (gates) y la bitácora de agentes.
-// La extensión de Chrome es stateless; estas tablas + el resto del brain son su
-// memoria. Ver OPERATIONS.md.
+// Hermes (el agente de computer use que maneja Alibaba) es stateless; estas
+// tablas + el resto del brain son su memoria. Ver OPERATIONS.md.
 // ===========================================================================
 
-/** Nombre del agente/actor que escribe en el sistema. */
-export type AgentName = "chrome" | "operador" | "cron" | "app";
+/**
+ * Nombre del agente/actor que escribe en el sistema.
+ * `hermes` = el agente de computer use que maneja Alibaba (reemplazó al viejo
+ * `chrome`, la extensión de Chrome; se conserva en la unión por logs históricos).
+ */
+export type AgentName = "hermes" | "chrome" | "operador" | "cron" | "app";
 
 /** Tipo de decisión que espera a Miguel (un gate de la línea de ensamblaje). */
 export type ApprovalKind =

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { buildBrief } from "@/lib/control";
 import { operatorIngestAction, markQueueDoneAction } from "@/lib/actions";
-import { CHROME_AGENT_PROMPT } from "@/lib/chrome-playbook";
+import { HERMES_AGENT_PROMPT } from "@/lib/hermes-playbook";
 import { CopyPrompt } from "@/components/copy-prompt";
 
 export const metadata = { title: "Consola del operador — Mi Tiendita PR" };
@@ -57,20 +57,21 @@ export default async function OperadorPage({
 }) {
   const sp = await searchParams;
   const fb = feedback(sp);
-  const brief = await buildBrief("chrome");
+  const brief = await buildBrief("hermes");
 
   return (
     <div className="wrap py-10">
       <div className="flex items-start justify-between flex-wrap gap-4 mb-2">
         <div>
-          <span className="eyebrow">El puente con la extensión</span>
+          <span className="eyebrow">El puente con Hermes</span>
           <h1 className="font-display text-4xl md:text-5xl mt-2">Consola del operador 🔌</h1>
         </div>
         <Link href="/admin/aprobaciones" className="btn btn-ghost btn-sm">Ir a Aprobaciones →</Link>
       </div>
       <p className="text-sm mb-6" style={{ color: "var(--color-ink-soft)" }}>
-        El pase por el brain para Claude-en-Chrome: <strong>lee</strong> el brief, ejecuta la cola de
-        outreach en Alibaba y <strong>deposita</strong> los hallazgos abajo. Tú apruebas en Aprobaciones.
+        El pase por el brain para Hermes (el agente de computer use): <strong>lee</strong> el brief, ejecuta
+        la cola de outreach en Alibaba y <strong>deposita</strong> los hallazgos abajo. Hermes corre solo
+        (skill + cron); también puedes pegar hallazgos a mano aquí. Tú apruebas en Aprobaciones.
       </p>
 
       {fb && (
@@ -82,15 +83,15 @@ export default async function OperadorPage({
         </div>
       )}
 
-      {/* 0) Prompt para la extensión */}
+      {/* 0) Playbook de Hermes */}
       <section className="mb-10">
         <div className="card p-5">
-          <h2 className="font-display text-2xl mb-1">Prompt para la extensión 📋</h2>
+          <h2 className="font-display text-2xl mb-1">Playbook de Hermes 📋</h2>
           <p className="text-sm mb-4" style={{ color: "var(--color-ink-soft)" }}>
-            Cópialo y pégalo como tarea en el sidebar de Claude-en-Chrome (debes estar logueado en /admin
-            en este mismo navegador). Ese es su cerebro de operación.
+            Es lo que corre Hermes (instalado como skill + cron, ver <code>HERMES-AGENT.md</code>). Cópialo
+            si quieres lanzar una corrida manual: <code>hermes -z &quot;…&quot; --skill mitiendita-alibaba -t terminal,browser,computer_use --yolo</code>.
           </p>
-          <CopyPrompt text={CHROME_AGENT_PROMPT} />
+          <CopyPrompt text={HERMES_AGENT_PROMPT} />
         </div>
       </section>
 
@@ -129,7 +130,7 @@ export default async function OperadorPage({
         )}
       </section>
 
-      {/* 2) El brief (lo que la extensión lee) */}
+      {/* 2) El brief (lo que Hermes lee) */}
       <section className="mb-10">
         <h2 className="font-display text-2xl mb-1">2 · El brief (recall)</h2>
         <p className="text-sm mb-4" style={{ color: "var(--color-ink-soft)" }}>
@@ -147,7 +148,7 @@ export default async function OperadorPage({
       <section className="mb-10">
         <h2 className="font-display text-2xl mb-1">3 · Depositar hallazgos</h2>
         <p className="text-sm mb-4" style={{ color: "var(--color-ink-soft)" }}>
-          Pega lo que encontraste en Alibaba como JSON. Cae al brain (origen <code>chrome</code>) y cada
+          Pega lo que encontraste en Alibaba como JSON. Cae al brain (origen <code>hermes</code>) y cada
           candidato abre un gate de aprobación. Máximo {brief.parameters.maxPerRun} candidatos por corrida.
         </p>
         <form action={operatorIngestAction} className="space-y-3">

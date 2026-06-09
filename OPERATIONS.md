@@ -20,12 +20,12 @@ la pieza a la próxima etapa. Los ✅ son los **gates** donde Miguel decide.
 
 | #  | Etapa | Quién la hace | Output (dato) | Gate |
 |----|-------|---------------|---------------|------|
-| 1  | Descubrir | Chrome ext. (Alibaba) + operador (tendencias web) | `SourcingCandidate` | — |
+| 1  | Descubrir | Hermes (Alibaba) + operador (tendencias web) | `SourcingCandidate` | — |
 | 2  | Evaluar (score/margen/encaje) | Operador + AI in-app | candidato puntuado | ✅ aprobar candidato |
-| 3  | Cotizar / contactar | Chrome ext. (mensajea en Alibaba) | `Quote` + `Supplier` | ✅ aprobar envío |
+| 3  | Cotizar / contactar | Hermes (mensajea en Alibaba) | `Quote` + `Supplier` | ✅ aprobar envío |
 | 4  | Negociar / decidir | Operador (compara cotizaciones) | candidato → `Negociando` | ✅ elegir suplidor |
 | 5  | Ordenar (compromiso de $) | Operador redacta, Miguel firma | `PurchaseOrder` | ✅ aprobar compra |
-| 6  | Producir / embarcar | Chrome ext. (lee status) + operador | `Shipment` | — |
+| 6  | Producir / embarcar | Hermes (lee status) + operador | `Shipment` | — |
 | 7  | Recibir / inventariar | Almacén confirma, operador reconcilia | `InventoryMovement` | confirmar recibo |
 | 8  | Publicar (ficha/fotos/precios) | AI in-app draft | `Product` activo | ✅ activar |
 | 9  | Promocionar | Operador + AI in-app | `Campaign` | ✅ aprobar |
@@ -43,8 +43,8 @@ cotización → orden → embarque → inventario → promoción → recompra.
 - **Capa A — La página (`/admin` + tienda):** la consola de control. Miguel ve todo
   y **aprueba** aquí. La cola de aprobaciones vive en `/admin/aprobaciones`.
 - **Capa B — Los agentes (las manos):**
-  - **Chrome ext. (Claude en el navegador):** ojos y manos en Alibaba. Deposita por
-    `POST /api/operator/ingest` y recoge trabajo aprobado del queue saliente.
+  - **Hermes (computer use sobre el Chrome real):** ojos y manos en Alibaba. Deposita por
+    `POST /api/operator/ingest` y recoge trabajo aprobado del queue saliente. Ver [`HERMES-AGENT.md`](HERMES-AGENT.md).
   - **Claude Code / operador:** orquesta el resto vía `lib/operator.ts` (CLI) + crons.
   - **Crons de Vercel:** el reloj — barrido de sourcing, follow-ups, chequeo de stock,
     reconciliación de pagos.
@@ -54,31 +54,31 @@ cotización → orden → embarque → inventario → promoción → recompra.
 
 ### El bus: pase por el brain + dos vías
 
-**La extensión de Chrome es _stateless_ (no tiene memoria persistente). El brain
+**Hermes es _stateless_ (no tiene memoria persistente entre corridas). El brain
 (la DB) ES su memoria.** Por eso el paso 0 de CADA corrida es un *pase por el brain*
 para recoger contexto — antes de descubrir, contactar o cualquier tarea. El ciclo es
 **read → act → write → log**:
 
-- `GET  /api/operator/brief?agent=chrome` — **el pase por el brain (primero, siempre).**
+- `GET  /api/operator/brief?agent=hermes` — **el pase por el brain (primero, siempre).**
   Un solo read que da consciencia situacional completa. Devuelve:
   1. **Identidad + reglas** — quién es, qué puede/no puede hacer, `SURTIDO_RULE`, gates.
   2. **Estado actual** — candidatos/suplidores ya conocidos → **no duplica ni recontacta**.
-  3. **Cola aprobada** — los `ApprovalTask` para `chrome`, con el mensaje ya redactado.
+  3. **Cola aprobada** — los `ApprovalTask` para `hermes`, con el mensaje ya redactado.
   4. **Decisiones recientes** — qué aprobó/rechazó Miguel y por qué → **calibración**.
   5. **Parámetros de sourcing** — margen objetivo, MOQ techo, categorías foco.
 
   Incluye un campo `briefing` en markdown ya digerido (para que Claude lo lea de
   corrido) respaldado por los datos estructurados.
-- `POST /api/operator/ingest` — deposita lo descubierto (extensión → sistema). *Existe; se amplía.*
+- `POST /api/operator/ingest` — deposita lo descubierto (Hermes → sistema). *Existe; se amplía.*
 - `POST /api/operator/queue/:id/done` — reporta el resultado de una tarea de la cola.
 
-Flujo completo: la extensión hace su **brief** → descubre/contacta según reglas, estado
+Flujo completo: Hermes hace su **brief** → descubre/contacta según reglas, estado
 y cola → deposita por `ingest` y cierra tareas con `done` → todo queda en `AgentRun`.
 (El operador redacta outreach → Miguel aprueba → el `ApprovalTask` aparece en el
-próximo `brief` de la extensión, que lo ejecuta en Alibaba y reporta de vuelta.)
+próximo `brief` de Hermes, que lo ejecuta en Alibaba y reporta de vuelta.)
 
-**Trigger = shortcuts en schedule (pull, no push).** La extensión NO corre continua:
-se levanta por atajos programados. El sistema nunca le empuja trabajo; ella lo hala con
+**Trigger = cron en schedule (pull, no push).** Hermes NO corre continuo:
+se levanta por el cron de Hermes. El sistema nunca le empuja trabajo; él lo hala con
 el `brief` en cada despertar. Implicaciones de diseño:
 - **Cada corrida es autosuficiente** — el `brief` es la única fuente de contexto de esa
   corrida (por eso trae reglas + estado + cola + decisiones de una sola lectura).
@@ -100,7 +100,7 @@ seed). En orden de palanca:
    promocion, recibo, recompra}; `status` ∈ {pendiente, aprobada, rechazada};
    `payload` (JSON con lo necesario para ejecutar al aprobar); `relatedType/relatedId`;
    `createdBy`; `decidedAt/decisionNote`.
-2. **`AgentRun`** (bitácora) — `agent` ∈ {chrome, operador, cron, app}; `action`;
+2. **`AgentRun`** (bitácora) — `agent` ∈ {hermes, operador, cron, app} (`chrome` legacy); `action`;
    `status` ∈ {ok, error, parcial}; `summary`; `meta` (JSON: counts, ids tocados);
    `startedAt/finishedAt`. Observabilidad + auditoría.
 3. **`PurchaseOrder`** — cierra el loop de $: `supplierId`, líneas (producto/candidato,
@@ -122,7 +122,7 @@ publicación sin OK de Miguel.** Cada gate crea un `ApprovalTask`; al aprobarlo,
 dispatcher (`lib/control.ts`) ejecuta el efecto según el `kind`:
 
 - aprobar **candidato** → avanza `stage` y habilita cotización.
-- aprobar **outreach** → encola la tarea para la extensión (queue saliente).
+- aprobar **outreach** → encola la tarea para Hermes (queue saliente).
 - aprobar **orden_compra** → marca el PO `enviada` y lo encola.
 - aprobar **activar_producto** → `Product.active = true`.
 - aprobar **promocion** → activa la `Campaign`.
@@ -154,7 +154,7 @@ la fase 1 (WhatsApp/email en fase posterior, detrás de la misma interfaz `notif
 - Recompra: el cron detecta stock bajo (`≤ ${LOW_STOCK_THRESHOLD}`) → gate `recompra`; al
   aprobar, `dispatchApproval` crea la OC.
 
-**Fase 4 — El puente con la extensión** ✅
+**Fase 4 — El puente con Hermes** ✅
 - `GET /api/operator/brief` (pase por el brain) + `POST /api/operator/queue/[id]/done` (ack).
 - Ingest ampliado: acepta `quotes` y `imageUrl` en candidatos. El brief trae cotizaciones
   recientes + cola FIFO (lo aprobado más viejo primero).
@@ -167,7 +167,7 @@ la fase 1 (WhatsApp/email en fase posterior, detrás de la misma interfaz `notif
   pendientes; resume en la bitácora. Auth por `CRON_SECRET` (si está; en dev se permite).
 
 > **Pendiente / futuro (no construido):** envío real por canal (WhatsApp/email) — hoy los
-> outreach/POs aprobados quedan en la cola para que la extensión los ejecute; reporte
+> outreach/POs aprobados quedan en la cola para que Hermes los ejecute; reporte
 > semanal por email; barrido de sourcing autónomo dentro del cron (depende de AI key).
 > Plan Hobby de Vercel: 1 cron diario (ya configurado). Más crons/granularidad → plan Pro.
 
@@ -177,7 +177,7 @@ la fase 1 (WhatsApp/email en fase posterior, detrás de la misma interfaz `notif
 
 - **El status es el contrato.** Automatizar = consultar entidades en un estado, hacer
   el trabajo, avanzar el estado (o crear un gate). Robusto, observable, resumible.
-- **Los agentes son stateless; el brain es su memoria.** La extensión de Chrome no
+- **Los agentes son stateless; el brain es su memoria.** Hermes no
   recuerda nada entre corridas. Por eso SIEMPRE empieza con un pase por el brain
   (`GET /brief`) y opera **read → act → write → log**. Nunca actúa sin recall.
 - **Sync discipline** en cada entidad nueva (ver `CLAUDE.md`).

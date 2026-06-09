@@ -6,14 +6,15 @@ import type { AgentName } from "@/lib/types";
 export const runtime = "nodejs";
 
 /**
- * El "pase por el brain" — paso 0 de cada corrida de un agente stateless (la
- * extensión de Chrome). Devuelve identidad+reglas, estado conocido (no duplicar),
- * cola aprobada, decisiones recientes y parámetros de sourcing. Ver OPERATIONS.md §2.
+ * El "pase por el brain" — paso 0 de cada corrida de un agente stateless (Hermes,
+ * el agente de computer use). Devuelve identidad+reglas, estado conocido (no
+ * duplicar), cola aprobada, decisiones recientes y parámetros de sourcing.
+ * Ver OPERATIONS.md §2.
  *
- *   GET /api/operator/brief?agent=chrome
+ *   GET /api/operator/brief?agent=hermes
  *   Authorization: Bearer <OPERATOR_INGEST_TOKEN>
  */
-const AGENTS: AgentName[] = ["chrome", "operador", "cron", "app"];
+const AGENTS: AgentName[] = ["hermes", "chrome", "operador", "cron", "app"];
 
 export async function GET(req: Request) {
   if (!operatorBusEnabled()) {
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
   }
 
   const param = new URL(req.url).searchParams.get("agent");
-  const agent: AgentName = AGENTS.includes(param as AgentName) ? (param as AgentName) : "chrome";
+  const agent: AgentName = AGENTS.includes(param as AgentName) ? (param as AgentName) : "hermes";
 
   try {
     const brief = await buildBrief(agent);

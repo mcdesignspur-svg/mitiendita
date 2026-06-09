@@ -4,6 +4,7 @@ import { listAgentRuns } from "@/lib/db";
 export const metadata = { title: "Bitácora — Mi Tiendita PR" };
 
 const AGENT_LABEL: Record<string, string> = {
+  hermes: "Hermes",
   chrome: "Chrome ext.",
   operador: "Operador",
   cron: "Cron",

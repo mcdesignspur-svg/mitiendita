@@ -115,9 +115,9 @@ El mensaje pide: precio a MOQ, price-breaks por volumen, lead time, costo de mue
 y envío a Puerto Rico (USA).
 
 El **envío real NO es automático**: cuando Miguel aprueba el gate, la tarea queda en
-la cola del *brief* y la extensión de Chrome la recoge y la envía en Alibaba (luego
-reporta con `POST /api/operator/queue/<id>/done`). Ver el cerebro de control en
-[`OPERATIONS.md`](OPERATIONS.md).
+la cola del *brief* y **Hermes** (el agente de computer use) la recoge y la envía en
+Alibaba (luego reporta con `POST /api/operator/queue/<id>/done`). Ver el cerebro de
+control en [`OPERATIONS.md`](OPERATIONS.md) y el agente en [`HERMES-AGENT.md`](HERMES-AGENT.md).
 
 ---
 

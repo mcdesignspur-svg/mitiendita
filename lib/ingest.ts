@@ -2,7 +2,7 @@
  * Ingreso compartido al "brain" (la columna de datos).
  *
  * Lo usan TANTO el CLI del operador (lib/operator.ts) COMO el webhook
- * (app/api/operator/ingest), así cualquier agente —el Claude de Chrome, un cron,
+ * (app/api/operator/ingest), así cualquier agente —Hermes (computer use), un cron,
  * Zapier, o yo— deposita candidatos/suplidores en la MISMA base (Neon o file).
  */
 import { createCandidate, createSupplier, createQuote } from "./db";
@@ -70,7 +70,7 @@ export async function ingestPayload(
   payload: { candidates?: CandidateInput[]; suppliers?: SupplierInput[]; quotes?: QuoteInput[] },
   opts: { agent?: AgentName } = {},
 ): Promise<IngestResult> {
-  const agent = opts.agent ?? "chrome";
+  const agent = opts.agent ?? "hermes";
 
   const suppliers: IngestResult["suppliers"] = [];
   for (const s of payload.suppliers ?? []) {

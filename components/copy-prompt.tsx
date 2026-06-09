@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/** Botón para copiar el prompt de la extensión + vista plegable del texto. */
+/** Botón para copiar el playbook de Hermes + vista plegable del texto. */
 export function CopyPrompt({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -26,10 +26,10 @@ export function CopyPrompt({ text }: { text: string }) {
     <div>
       <div className="flex items-center gap-3 flex-wrap">
         <button type="button" onClick={copy} className="btn btn-primary btn-sm">
-          {copied ? "✓ Copiado" : "📋 Copiar prompt para la extensión"}
+          {copied ? "✓ Copiado" : "📋 Copiar playbook de Hermes"}
         </button>
         <span className="text-xs" style={{ color: "var(--color-muted)" }}>
-          Pégalo como tarea en el sidebar de Claude-en-Chrome.
+          Corrida manual: hermes -z &quot;…&quot; --skill mitiendita-alibaba -t terminal,browser,computer_use --yolo
         </span>
       </div>
       <details className="mt-3">

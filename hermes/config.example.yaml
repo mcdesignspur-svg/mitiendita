@@ -1,0 +1,17 @@
+# Fragmento de config para Hermes Agent (~/.hermes/config.yaml).
+# NO es el config completo — solo las piezas relevantes para el conector de Alibaba.
+# Mézclalo en tu ~/.hermes/config.yaml existente. Los secretos van en ~/.hermes/.env.
+
+# El modelo cerebro: gpt-5.4-mini ya sirve (es vision-capable, suficiente para capture som).
+# (Para cambiar a Hermes 4: `hermes model` y setea auxiliary.vision a un modelo con visión.)
+
+terminal:
+  backend: local
+  # Reenvía estas vars (definidas en ~/.hermes/.env) al subproceso donde corre curl.
+  env_passthrough: [OPERATOR_INGEST_TOKEN, MT_BASE_URL]
+
+# Toolsets que usa el conector (deben estar activos en el perfil):
+#   - terminal      → curl al bus del operador
+#   - browser       → descubrir productos en Alibaba (rápido, anónimo)
+#   - computer_use  → outreach sobre el Chrome real logueado (cua-driver instalado + permisos)
+# Verifícalo con `hermes /toolsets` (deben salir con (*)) y `cua-driver permissions status`.

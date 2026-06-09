@@ -79,11 +79,11 @@ async function outreach(supplierId: string, productName?: string) {
     outreachDraft: `${draft.subject}\n\n${draft.body}`,
     lastContactedAt: new Date().toISOString(),
   });
-  // Gate: el envío real lo hace la extensión SOLO cuando Miguel aprueba esta tarea.
+  // Gate: el envío real lo hace Hermes SOLO cuando Miguel aprueba esta tarea.
   await createTask({
     kind: "outreach",
     title: `Enviar outreach: ${s.name}${productName ? ` · ${productName}` : ""}`,
-    summary: `Mensaje redactado (${draft.source}). Aprobar para que la extensión lo envíe en ${s.platform}.`,
+    summary: `Mensaje redactado (${draft.source}). Aprobar para que Hermes lo envíe en ${s.platform}.`,
     createdBy: "operador",
     payload: {
       supplierId: s.id,

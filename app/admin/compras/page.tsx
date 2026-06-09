@@ -89,7 +89,7 @@ export default async function ComprasPage() {
         <h2 className="font-display text-2xl mb-4">Cotizaciones ({quotes.length})</h2>
         {quotes.length === 0 ? (
           <p style={{ color: "var(--color-muted)" }}>
-            Sin cotizaciones todavía. Llegan cuando un suplidor responde (vía la extensión o el operador).
+            Sin cotizaciones todavía. Llegan cuando un suplidor responde (vía Hermes o el operador).
           </p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">

@@ -16,6 +16,7 @@ const KIND_LABEL: Record<ApprovalKind, string> = {
 };
 
 const AGENT_LABEL: Record<string, string> = {
+  hermes: "Hermes",
   chrome: "Chrome ext.",
   operador: "Operador",
   cron: "Cron",
@@ -49,7 +50,7 @@ export default async function AprobacionesPage() {
       </div>
       <p className="text-sm mb-8" style={{ color: "var(--color-ink-soft)" }}>
         Cada gate de dinero, contacto externo o publicación espera tu OK. Lo que apruebes se ejecuta
-        y, si toca, se encola para que la extensión de Chrome lo haga en Alibaba.
+        y, si toca, se encola para que Hermes lo haga en Alibaba.
       </p>
 
       {pendientes.length === 0 ? (

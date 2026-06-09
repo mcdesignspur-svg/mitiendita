@@ -560,7 +560,7 @@ export async function discoverCandidatesAction(fd: FormData): Promise<void> {
   if (!(await isAdmin())) return;
   const brief = String(fd.get("brief") || "").trim();
   const { candidates } = await brainstormCandidates({ brief, count: 4 });
-  // Mismo camino que la extensión: deposita por el brain → abre gate por candidato + bitácora.
+  // Mismo camino que Hermes: deposita por el brain → abre gate por candidato + bitácora.
   if (candidates.length) {
     await ingestPayload(
       { candidates: candidates.map((c) => ({ ...c, stage: "Detectado" as const, origin: "app" as const })) },
@@ -675,11 +675,11 @@ export async function draftOutreachAction(fd: FormData): Promise<void> {
     outreachDraft: `${draft.subject}\n\n${draft.body}`,
     lastContactedAt: new Date().toISOString(),
   });
-  // Gate: el envío real lo hace la extensión SOLO cuando Miguel aprueba esta tarea.
+  // Gate: el envío real lo hace Hermes SOLO cuando Miguel aprueba esta tarea.
   await createTask({
     kind: "outreach",
     title: `Enviar outreach: ${s.name}`,
-    summary: `Mensaje redactado (${draft.source}). Aprobar para que la extensión lo envíe en ${s.platform}.`,
+    summary: `Mensaje redactado (${draft.source}). Aprobar para que Hermes lo envíe en ${s.platform}.`,
     createdBy: "app",
     payload: { supplierId: s.id, subject: draft.subject, body: draft.body, channel },
     relatedType: "supplier",
@@ -889,9 +889,9 @@ export async function deleteCampaignAction(fd: FormData): Promise<void> {
   revalidatePath("/admin/productos");
 }
 
-// --- Consola del operador (Claude en Chrome, cookie-authed) -----
+// --- Consola del operador (Hermes/computer use, o pegado manual, cookie-authed) -----
 /**
- * La extensión (o Miguel) pega aquí los hallazgos en JSON
+ * Hermes (o Miguel) deposita aquí los hallazgos en JSON
  * { candidates, suppliers, quotes } y caen al brain vía el mismo ingestPayload
  * que el webhook — pero autorizado por la cookie de admin, sin token.
  */
@@ -920,7 +920,7 @@ export async function operatorIngestAction(fd: FormData): Promise<void> {
     redirect("/admin/operador?err=name");
   }
 
-  const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: "chrome" });
+  const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: "hermes" });
   revalidatePath("/admin/operador");
   revalidatePath("/admin/aprobaciones");
   revalidatePath("/admin");
@@ -930,8 +930,8 @@ export async function operatorIngestAction(fd: FormData): Promise<void> {
 }
 
 /**
- * La extensión reporta que ejecutó una tarea de la cola (ej. envió el outreach en
- * Alibaba). La saca de la cola del brief (executedAt) y deja rastro.
+ * Hermes (o Miguel) reporta que ejecutó una tarea de la cola (ej. envió el outreach
+ * en Alibaba). La saca de la cola del brief (executedAt) y deja rastro.
  */
 export async function markQueueDoneAction(fd: FormData): Promise<void> {
   if (!(await isAdmin())) return;
@@ -941,7 +941,7 @@ export async function markQueueDoneAction(fd: FormData): Promise<void> {
   if (!task || task.status !== "aprobada" || task.executedAt) return;
   await updateApprovalTask(tid, { executedAt: new Date().toISOString() });
   await logRun({
-    agent: "chrome",
+    agent: "hermes",
     action: "queue:done",
     summary: `Ejecutada: ${task.title}`,
     meta: { taskId: tid, note },

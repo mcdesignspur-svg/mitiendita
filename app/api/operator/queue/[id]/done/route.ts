@@ -6,7 +6,7 @@ import { operatorAuthorized, operatorBusEnabled } from "@/lib/operator-auth";
 export const runtime = "nodejs";
 
 /**
- * Ack del queue — la extensión reporta que ejecutó una tarea aprobada (ej. envió
+ * Ack del queue — Hermes reporta que ejecutó una tarea aprobada (ej. envió
  * el outreach en Alibaba). La saca de su cola del brief y deja rastro. Ver
  * OPERATIONS.md §2 (read → act → write → log).
  *
@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   await updateApprovalTask(id, { executedAt: new Date().toISOString() });
   await logRun({
-    agent: "chrome",
+    agent: "hermes",
     action: "queue:done",
     summary: `Ejecutada: ${task.title}`,
     meta: { taskId: id, result },

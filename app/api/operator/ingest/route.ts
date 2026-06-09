@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const MAX_ITEMS = 50;
 
 /**
- * Webhook de ingreso al "brain". Cualquier agente (el Claude de Chrome, un cron,
+ * Webhook de ingreso al "brain". Cualquier agente (Hermes/computer use, un cron,
  * Zapier, etc.) deposita candidatos/suplidores aquí y caen en la MISMA DB que
  * lee la página y el operador.
  *
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: body.agent ?? "chrome" });
+    const result = await ingestPayload({ candidates, suppliers, quotes }, { agent: body.agent ?? "hermes" });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     console.error("[ingest webhook] fallo:", e);

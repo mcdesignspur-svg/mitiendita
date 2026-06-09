@@ -7,8 +7,8 @@
  *  2. logRun()          — deja rastro de lo que hizo un agente/cron (bitácora).
  *                         Best-effort: nunca tira.
  *  3. dispatchApproval()— ejecuta el efecto de una tarea al aprobarse, por `kind`.
- *  4. buildBrief()      — el "pase por el brain": la extensión de Chrome (stateless)
- *                         lo lee como paso 0 de cada corrida para recoger contexto.
+ *  4. buildBrief()      — el "pase por el brain": Hermes (el agente de computer
+ *                         use, stateless) lo lee como paso 0 de cada corrida.
  */
 import {
   createApprovalTask,
@@ -36,14 +36,14 @@ function money2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-/** Kinds que ejecuta la extensión de Chrome (aparecen en su cola del brief). */
-const CHROME_KINDS = new Set<ApprovalKind>(["outreach"]);
+/** Kinds que ejecuta Hermes en Alibaba (aparecen en su cola del brief). */
+const HERMES_KINDS = new Set<ApprovalKind>(["outreach"]);
 
 /** Criterios de sourcing vigentes (env-overridables en el futuro). */
 export const SOURCING_PARAMETERS = {
   targetMargin: 0.6,
   maxMoq: 200,
-  /** Tope de candidatos nuevos por corrida: la extensión corre desatendida (schedule). */
+  /** Tope de candidatos nuevos por corrida: Hermes corre desatendido (schedule). */
   maxPerRun: 8,
   categories: ["Auto & Gasolinera", "Tech & Gadgets", "Hogar Viral", "Impulso & Conveniencia"],
   avoid: ["belleza", "bienestar", "skincare", "suplementos", "salud", "eléctricos sin certificación"],
@@ -113,13 +113,13 @@ export async function dispatchApproval(task: ApprovalTask): Promise<DispatchResu
       return { ok: true, message: "Candidato aprobado → pasa a Evaluando (listo para cotizar)." };
     }
     case "outreach": {
-      // El mensaje aprobado queda en la cola del brief para que la extensión lo envíe.
+      // El mensaje aprobado queda en la cola del brief para que Hermes lo envíe en Alibaba.
       const sid = task.relatedId ?? (task.payload?.supplierId as string | undefined);
       if (sid) {
         const s = await getSupplierById(sid);
         if (s && s.status === "nuevo") await updateSupplier(sid, { status: "contactado" });
       }
-      return { ok: true, message: "Outreach aprobado → encolado para la extensión de Chrome." };
+      return { ok: true, message: "Outreach aprobado → encolado para Hermes." };
     }
     case "activar_producto": {
       const pid = task.relatedId ?? (task.payload?.productId as string | undefined);
@@ -273,7 +273,7 @@ export async function receivePurchaseOrder(
 }
 
 // ===========================================================================
-// El pase por el brain (brief) — la memoria de la extensión stateless
+// El pase por el brain (brief) — la memoria de Hermes (stateless)
 // ===========================================================================
 export interface OperatorBrief {
   generatedAt: string;
@@ -306,7 +306,7 @@ const GATES = [
   "Calíbrate con `recentDecisions`: no traigas más de lo que Miguel rechazó.",
 ];
 
-export async function buildBrief(agent: AgentName = "chrome"): Promise<OperatorBrief> {
+export async function buildBrief(agent: AgentName = "hermes"): Promise<OperatorBrief> {
   const [candidates, suppliers, tasks, quotes] = await Promise.all([
     listCandidates(),
     listSuppliers(),
@@ -316,7 +316,7 @@ export async function buildBrief(agent: AgentName = "chrome"): Promise<OperatorB
 
   // Cola FIFO (lo aprobado más viejo primero) para que nada se quede rezagado.
   const queue = tasks
-    .filter((t) => t.status === "aprobada" && !t.executedAt && CHROME_KINDS.has(t.kind))
+    .filter((t) => t.status === "aprobada" && !t.executedAt && HERMES_KINDS.has(t.kind))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((t) => ({ id: t.id, kind: t.kind, title: t.title, payload: t.payload }));
 
