@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getOrderById, updateOrder } from "@/lib/db";
 import { getStripe, stripeEnabled } from "@/lib/stripe";
+import { confirmAthPayment } from "@/lib/athmovil";
+import { applyOrderInventory } from "@/lib/inventory";
+import { toCents } from "@/lib/money";
 import { money } from "@/lib/format";
 import { ClearCart } from "@/components/clear-cart";
 
@@ -14,7 +17,10 @@ export default async function GraciasPage({
   const { o } = await searchParams;
   let order = o ? await getOrderById(o) : undefined;
 
-  // Reconciliar el pago con Stripe por si el webhook aún no llegó.
+  // Reconciliar el pago con Stripe por si el webhook aún no llegó. M-8: el monto
+  // cobrado debe coincidir con el total de la orden. CR-3/A-8: si pasa a pagada,
+  // descontamos inventario aquí también (idempotente con el webhook por el guard
+  // de "pagada").
   if (
     order &&
     order.paymentMethod === "stripe" &&
@@ -24,16 +30,33 @@ export default async function GraciasPage({
   ) {
     try {
       const session = await getStripe().checkout.sessions.retrieve(order.stripeSessionId);
-      if (session.payment_status === "paid") {
-        order =
-          (await updateOrder(order.id, { paymentStatus: "pagada", status: "procesando" })) ?? order;
+      const paid = session.amount_total ?? 0;
+      if (session.payment_status === "paid" && paid === toCents(order.total)) {
+        const updated = await updateOrder(order.id, {
+          paymentStatus: "pagada",
+          status: "procesando",
+        });
+        if (updated) {
+          await applyOrderInventory(updated).catch(() => {});
+          order = updated;
+        }
       }
     } catch {
       /* ignore */
     }
   }
 
+  // Reconciliar ATH Móvil server-to-server por si el webhook aún no llegó (CR-2).
+  if (order && order.paymentMethod === "ath_movil" && order.paymentStatus === "pendiente_pago") {
+    await confirmAthPayment({ orderId: order.id }).catch(() => {});
+    order = (await getOrderById(order.id)) ?? order;
+  }
+
   const ps = order?.paymentStatus;
+  // M-11: solo vaciamos el carrito cuando el pedido está realmente cerrado
+  // (pago confirmado, factura B2B aceptada, o demo sin pasarela). Si el pago
+  // quedó pendiente, conservamos el carrito para que el cliente reintente.
+  const cartDone = !order || ps === "pagada" || ps === "factura_pendiente" || ps === undefined;
   const head =
     ps === "factura_pendiente"
       ? {
@@ -61,7 +84,7 @@ export default async function GraciasPage({
 
   return (
     <div className="wrap py-16 max-w-2xl">
-      <ClearCart />
+      <ClearCart enabled={cartDone} />
       <div className="card p-8 md:p-12 text-center">
         <div className="text-6xl mb-4">{head.icon}</div>
         <h1 className="font-display text-4xl mb-2">{head.title}</h1>

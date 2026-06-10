@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { adminLoginAction, type FormState } from "@/lib/actions";
 
-export function AdminLogin() {
+export function AdminLogin({ showDemo = false }: { showDemo?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(
     adminLoginAction,
     {},
@@ -27,9 +27,11 @@ export function AdminLogin() {
         <button type="submit" disabled={pending} className="btn btn-ink w-full mt-5">
           {pending ? "Entrando…" : "Entrar"}
         </button>
-        <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
-          Demo: contraseña <strong>admin</strong> (configurable con ADMIN_PASSWORD).
-        </p>
+        {showDemo && (
+          <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
+            Demo: contraseña <strong>admin</strong> (configurable con ADMIN_PASSWORD).
+          </p>
+        )}
       </form>
     </div>
   );

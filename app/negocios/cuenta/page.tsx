@@ -4,6 +4,7 @@ import { getSessionBusiness } from "@/lib/auth";
 import { listOrders } from "@/lib/db";
 import { logoutBusinessAction } from "@/lib/actions";
 import { money } from "@/lib/format";
+import { ReorderButton } from "@/components/reorder-button";
 import type { BusinessStatus } from "@/lib/types";
 
 export const metadata = { title: "Mi cuenta — Mi Tiendita PR" };
@@ -96,14 +97,17 @@ export default async function CuentaPage({
         ) : (
           <div className="space-y-2">
             {orders.map((o) => (
-              <div key={o.id} className="flex items-center justify-between card-flat px-4 py-3">
+              <div key={o.id} className="flex items-center justify-between gap-3 flex-wrap card-flat px-4 py-3">
                 <div>
                   <span className="font-semibold">{o.id}</span>
                   <span className="text-sm ml-2" style={{ color: "var(--color-muted)" }}>
                     {o.items.reduce((s, i) => s + i.qty, 0)} uds
                   </span>
                 </div>
-                <span className="font-display text-lg">{money(o.total)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-display text-lg">{money(o.total)}</span>
+                  <ReorderButton items={o.items.map((i) => ({ productId: i.productId, qty: i.qty }))} />
+                </div>
               </div>
             ))}
           </div>

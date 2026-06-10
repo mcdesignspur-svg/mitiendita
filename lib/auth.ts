@@ -3,29 +3,79 @@ import { cookies } from "next/headers";
 import type { Business } from "./types";
 import { getBusinessById } from "./db";
 
-const SECRET = process.env.SESSION_SECRET || "mi-tiendita-dev-secret-change-me";
+// A-1(a): En producción, SESSION_SECRET debe estar seteado explícitamente.
+// Fallar al cargar es preferible a silenciosamente usar un secreto conocido.
+const _rawSecret = process.env.SESSION_SECRET;
+if (!_rawSecret && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "[auth] SESSION_SECRET no está seteado. Configúralo en las variables de entorno antes de deployar.",
+  );
+}
+const SECRET = _rawSecret || "mi-tiendita-dev-secret-change-me";
+
 const SESSION_COOKIE = "mt_session";
 const ADMIN_COOKIE = "mt_admin";
+
+// TTLs de tokens (en segundos).
+const TTL_SESSION_S = 60 * 60 * 24 * 30; // 30 días
+const TTL_ADMIN_S = 60 * 60 * 24 * 7;    // 7 días
 
 // Password hashing vive en ./crypto (módulo puro). Se re-exporta por compatibilidad.
 export { hashPassword, verifyPassword } from "./crypto";
 
-// --- Signing ----------------------------------------------------
-function sign(value: string): string {
-  return crypto.createHmac("sha256", SECRET).update(value).digest("hex").slice(0, 32);
+// --- Signing -------------------------------------------------------
+// Formato del valor firmado: "<payload>:<issuedAt_epoch_s>".
+// El HMAC cubre todo el string "payload:issuedAt" antes del punto separador.
+
+function sign(value: string): Buffer {
+  return crypto.createHmac("sha256", SECRET).update(value).digest();
 }
 
-function makeToken(value: string): string {
-  return `${value}.${sign(value)}`;
+function makeToken(payload: string): string {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const value = `${payload}:${issuedAt}`;
+  const mac = sign(value).toString("hex");
+  return `${value}.${mac}`;
 }
 
-function readToken(token: string | undefined): string | null {
+/**
+ * Verifica firma y TTL. Devuelve el payload original o null si algo falla.
+ * `maxAgeS` es el TTL máximo en segundos desde emisión.
+ */
+function readToken(token: string | undefined, maxAgeS: number): string | null {
   if (!token) return null;
   const idx = token.lastIndexOf(".");
   if (idx < 0) return null;
-  const value = token.slice(0, idx);
-  const sig = token.slice(idx + 1);
-  return sign(value) === sig ? value : null;
+  const value = token.slice(0, idx);   // "payload:issuedAt"
+  const sigHex = token.slice(idx + 1);
+
+  // Comparación en tiempo constante: hashea ambos a Buffer de igual longitud.
+  const expected = sign(value);
+  let candidate: Buffer;
+  try {
+    candidate = Buffer.from(sigHex, "hex");
+  } catch {
+    return null;
+  }
+  if (candidate.length !== expected.length) {
+    // Longitudes distintas: rellena con ceros para no revelar nada antes de comparar.
+    const padded = Buffer.alloc(expected.length, 0);
+    candidate.copy(padded, 0, 0, Math.min(candidate.length, padded.length));
+    // Asegurar que siempre falla (longitudes distintas ⇒ inválido).
+    if (!crypto.timingSafeEqual(padded, expected)) return null;
+    return null;
+  }
+  if (!crypto.timingSafeEqual(candidate, expected)) return null;
+
+  // Verifica TTL.
+  const parts = value.split(":");
+  const issuedAt = parseInt(parts[parts.length - 1], 10);
+  if (!issuedAt || isNaN(issuedAt)) return null;
+  const age = Math.floor(Date.now() / 1000) - issuedAt;
+  if (age < 0 || age > maxAgeS) return null;
+
+  // Reconstruye el payload (puede contener ":" si era un UUID).
+  return parts.slice(0, -1).join(":");
 }
 
 // --- Business session -------------------------------------------
@@ -36,7 +86,7 @@ export async function setSession(businessId: string): Promise<void> {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: TTL_SESSION_S,
   });
 }
 
@@ -47,7 +97,7 @@ export async function clearSession(): Promise<void> {
 
 export async function getSessionBusiness(): Promise<Business | null> {
   const jar = await cookies();
-  const businessId = readToken(jar.get(SESSION_COOKIE)?.value);
+  const businessId = readToken(jar.get(SESSION_COOKIE)?.value, TTL_SESSION_S);
   if (!businessId) return null;
   return (await getBusinessById(businessId)) ?? null;
 }
@@ -60,8 +110,7 @@ export async function setAdminSession(): Promise<void> {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    // 30 días: que la consola del operador sobreviva entre corridas del agente.
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: TTL_ADMIN_S,
   });
 }
 
@@ -72,9 +121,25 @@ export async function clearAdminSession(): Promise<void> {
 
 export async function isAdmin(): Promise<boolean> {
   const jar = await cookies();
-  return readToken(jar.get(ADMIN_COOKIE)?.value) === "admin";
+  return readToken(jar.get(ADMIN_COOKIE)?.value, TTL_ADMIN_S) === "admin";
 }
 
+// A-1(b): En producción, ADMIN_PASSWORD debe estar seteado.
+// Usa timingSafeEqual sobre hashes SHA-256 de longitud fija para no filtrar longitud.
 export function checkAdminPassword(password: string): boolean {
-  return password === (process.env.ADMIN_PASSWORD || "admin");
+  const stored = process.env.ADMIN_PASSWORD;
+  if (!stored) {
+    // En prod: sin contraseña configurada → denegar siempre (fail-closed).
+    // En dev: permite el fallback "admin".
+    if (process.env.NODE_ENV === "production") return false;
+    // Dev fallback
+    const devPassword = "admin";
+    const a = crypto.createHash("sha256").update(password).digest();
+    const b = crypto.createHash("sha256").update(devPassword).digest();
+    return crypto.timingSafeEqual(a, b);
+  }
+  // Compara hashes para no revelar longitud de la contraseña almacenada.
+  const a = crypto.createHash("sha256").update(password).digest();
+  const b = crypto.createHash("sha256").update(stored).digest();
+  return crypto.timingSafeEqual(a, b);
 }

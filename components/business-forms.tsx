@@ -80,7 +80,7 @@ export function RegisterForm() {
   );
 }
 
-export function LoginForm() {
+export function LoginForm({ showDemo = false }: { showDemo?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(
     loginBusinessAction,
     {},
@@ -106,9 +106,11 @@ export function LoginForm() {
         ¿Nuevo negocio?{" "}
         <Link href="/negocios/registro" className="font-semibold underline">Crear cuenta</Link>
       </p>
-      <div className="mt-4 text-xs text-center rounded-lg p-3" style={{ background: "var(--color-cream-2)", color: "var(--color-muted)" }}>
-        Demo verificada: <strong>demo@gasolinera.pr</strong> / <strong>demo1234</strong>
-      </div>
+      {showDemo && (
+        <div className="mt-4 text-xs text-center rounded-lg p-3" style={{ background: "var(--color-cream-2)", color: "var(--color-muted)" }}>
+          Demo verificada: <strong>demo@gasolinera.pr</strong> / <strong>demo1234</strong>
+        </div>
+      )}
     </form>
   );
 }

@@ -44,13 +44,34 @@ export async function GET(req: Request) {
   }
 
   const token = pickToken(res);
+  // M-18: redacta refresh_token (y cualquier otro *_token salvo access_token) del JSON crudo
+  // antes de mostrarlo en pantalla. El access_token ya se muestra separado arriba.
+  const safeRes = redactSensitiveTokens(res);
   const body = `
     ${token ? `<p><strong>access_token:</strong></p><pre class="tok">${escapeHtml(token)}</pre>
       <p>Pégalo en <code>ALIBABA_ACCESS_TOKEN</code> (Vercel → Settings → Environment Variables, Production) y redeploys.</p>`
       : `<p style="color:#b00">No encontré un campo de token en la respuesta. Mira el JSON crudo abajo y dime el nombre del campo; ajusto el cliente.</p>`}
-    <details open><summary>Respuesta cruda</summary><pre>${escapeHtml(JSON.stringify(res, null, 2))}</pre></details>
+    <details open><summary>Respuesta cruda</summary><pre>${escapeHtml(JSON.stringify(safeRes, null, 2))}</pre></details>
   `;
   return page("Token de Alibaba", body);
+}
+
+/**
+ * M-18: redacta campos sensibles del objeto de respuesta antes de imprimirlo.
+ * Conserva access_token (ya se muestra separado en la UI para que el admin lo copie)
+ * pero oculta refresh_token y cualquier otro campo que contenga "token" en el nombre.
+ */
+function redactSensitiveTokens(obj: AlibabaResponse): Record<string, unknown> {
+  const KEEP = new Set(["access_token", "accessToken", "token"]); // los que ya mostramos separados
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (/token/i.test(k) && !KEEP.has(k) && typeof v === "string") {
+      result[k] = "[REDACTED]";
+    } else {
+      result[k] = v;
+    }
+  }
+  return result;
 }
 
 function pickToken(res: AlibabaResponse): string | null {

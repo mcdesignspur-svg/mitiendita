@@ -7,6 +7,13 @@ export const runtime = "nodejs";
 
 const MAX_ITEMS = 50;
 
+// M-3: Límite de tamaño del body en bytes (256 KB).
+// Rechazamos ANTES de leer el body para no cargar payloads grandes en memoria.
+const MAX_BODY_BYTES = 256 * 1024; // 256 KB
+
+// Agentes permitidos — misma lista que /api/operator/brief.
+const ALLOWED_AGENTS = new Set<string>(["hermes", "chrome", "operador", "cron", "zapier"]);
+
 /**
  * Webhook de ingreso al "brain". Cualquier agente (Hermes/computer use, un cron,
  * Zapier, etc.) deposita candidatos/suplidores aquí y caen en la MISMA DB que
@@ -33,11 +40,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
+  // M-3: Guard de tamaño — rechaza antes de parsear el JSON.
+  const contentLength = req.headers.get("content-length");
+  if (contentLength !== null) {
+    const byteCount = parseInt(contentLength, 10);
+    if (!isNaN(byteCount) && byteCount > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: `Payload demasiado grande. Máximo ${MAX_BODY_BYTES / 1024} KB.` },
+        { status: 413 },
+      );
+    }
+  }
+
   let body: { candidates?: CandidateInput[]; suppliers?: SupplierInput[]; quotes?: QuoteInput[]; agent?: AgentName };
   try {
+    // Nota: req.json() en Node runtime no tiene límite propio; el guard de
+    // Content-Length arriba cubre el caso donde el cliente lo manda.
+    // Para cubrir el caso sin Content-Length se podría leer el stream manualmente,
+    // pero Next.js limita el body de Server Actions a 1MB por defecto.
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+  }
+
+  // M-3: Validar shape del body — debe ser un objeto plano.
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Body debe ser un objeto JSON." }, { status: 400 });
+  }
+
+  // M-3: Validar agent contra la lista permitida.
+  if (body.agent !== undefined && !ALLOWED_AGENTS.has(body.agent)) {
+    return NextResponse.json(
+      { error: `Agente desconocido: "${body.agent}". Permitidos: ${[...ALLOWED_AGENTS].join(", ")}.` },
+      { status: 400 },
+    );
   }
 
   const candidates = Array.isArray(body?.candidates) ? body.candidates : [];

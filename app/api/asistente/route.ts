@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { listProducts } from "@/lib/db";
 import { effectiveRetail } from "@/lib/products";
 import { shopAssistant, type AssistantTurn } from "@/lib/ai";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -9,17 +11,59 @@ export const runtime = "nodejs";
  * Asistente de compras de la tienda pública (B2C). Recibe el mensaje + historial,
  * le pasa el catálogo activo al cerebro AI y devuelve respuesta + productos
  * recomendados (con todo lo necesario para añadirlos al carrito).
+ *
+ * Límite: 10 req/min por IP (A-12 — denial-of-wallet).
+ * Historial: máx 6 turnos, cada mensaje capado a 500 chars.
  */
+
+/** Schema zod para validar el historial del cuerpo del request. */
+const TurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().max(500),
+});
+const BodySchema = z.object({
+  message: z.string().max(500).optional(),
+  history: z.array(TurnSchema).max(20).optional(), // el server recorta a 6 abajo
+});
+
 export async function POST(req: Request) {
-  let body: { message?: string; history?: AssistantTurn[] };
+  // --- Rate limit (A-12) ---
+  const forwarded = req.headers.get("x-forwarded-for") ?? "unknown";
+  const ip = forwarded.split(",")[0].trim();
+  const rl = rateLimit(`asistente:${ip}`, 10, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Espera un momento y vuelve a intentar." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)),
+          "X-RateLimit-Limit": "10",
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+
+  // --- Parse y validación del body ---
+  let raw: unknown;
   try {
-    body = await req.json();
+    raw = await req.json();
   } catch {
     return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 });
   }
 
-  const message = String(body.message ?? "").slice(0, 500).trim();
+  const parsed = BodySchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 });
+  }
+  const body = parsed.data;
+
+  const message = (body.message ?? "").trim();
   if (!message) return NextResponse.json({ error: "Escribe un mensaje." }, { status: 400 });
+
+  // Recorta el historial: solo últimos 6 turnos, cada content ya viene capado a 500 por el schema.
+  const history: AssistantTurn[] = (body.history ?? []).slice(-6);
 
   const products = await listProducts({ activeOnly: true });
   const catalog = products.map((p) => ({
@@ -32,7 +76,7 @@ export async function POST(req: Request) {
 
   const result = await shopAssistant({
     message,
-    history: Array.isArray(body.history) ? body.history : [],
+    history,
     catalog,
   });
 

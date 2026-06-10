@@ -77,6 +77,8 @@ export const orders = pgTable("orders", {
   paymentMethod: text("payment_method"),
   stripeSessionId: text("stripe_session_id"),
   paymentRef: text("payment_ref"),
+  // Id de la transacción de ATH Móvil eCommerce (reconciliación del pago).
+  athEcommerceId: text("ath_ecommerce_id"),
   createdAt: text("created_at").notNull(),
 });
 

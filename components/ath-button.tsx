@@ -11,7 +11,6 @@ export interface AthOrder {
   items: { name: string; qty: number; unitPrice: number }[];
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export function AthButton({
   order,
   publicToken,

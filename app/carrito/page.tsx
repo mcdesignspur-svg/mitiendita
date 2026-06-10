@@ -7,6 +7,9 @@ export default async function CarritoPage() {
   const business = await getSessionBusiness();
   const isWholesale = business?.status === "verified";
 
+  // CR-1: el carrito del cliente solo guarda {productId, qty}. CartView pide al
+  // server que repricie esas líneas (priceCartAction → lib/pricing) para mostrar
+  // precios reales; aquí solo pasamos la pista de sesión (kind/negocio).
   return (
     <div className="wrap py-12">
       <h1 className="font-display text-4xl md:text-5xl mb-8">Tu carrito 🛒</h1>

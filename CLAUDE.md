@@ -14,7 +14,7 @@ The codebase and UI are written in **Spanish (boricua)** — identifiers, routes
 npm run dev          # Next dev server → http://localhost:3000
 npm run build        # production build
 npm start            # serve production build
-npm run lint         # next lint (no eslint config committed; Next may prompt to create one)
+npm run lint         # eslint . (flat config in eslint.config.mjs; instala deps con npm i -D eslint eslint-config-next @eslint/eslintrc)
 
 npm run db:push      # sync lib/schema.ts → Postgres/Neon (no migration files; uses drizzle-kit push)
 npm run db:seed      # insert SEED_PRODUCTS + demo businesses + sourcing seeds (idempotent)
@@ -35,10 +35,12 @@ Demo credentials: business verified `demo@gasolinera.pr` / `demo1234`; business 
 
 ### Switchable data layer — the central design
 
-`lib/db.ts` re-exports one of two interchangeable adapters, chosen at runtime:
+`lib/db.ts` re-exports one of two interchangeable adapters, resolved **per-call** at runtime (not at import time):
 
 - **No `DATABASE_URL`** → `lib/db-file.ts` (JSON file at `/.data/db.json`, zero setup, seeds itself on first read).
 - **`DATABASE_URL` set** → `lib/db-postgres.ts` (Neon Postgres via Drizzle, lazy client in `lib/drizzle.ts`).
+
+**Script env-load gotcha:** any `tsx` script that imports `./db` must `import "./load-env"` FIRST — otherwise `DATABASE_URL` may not be loaded yet and the script silently falls back to the file-store even in prod.
 
 Both adapters expose the **exact same async function signatures**, so pages/actions/auth never branch on the backend. **When you add or change a data operation, you must update both `db-file.ts` and `db-postgres.ts` and re-export it from `db.ts` with matching types** — `db.ts` types every export against the `pg` module (`typeof pg.x`), so a drift in signatures breaks the build.
 

@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { listProducts } from "@/lib/db";
-import type { Product } from "@/lib/types";
 import { money, marginPct, pct } from "@/lib/format";
+import { toPublicProduct } from "@/lib/public-product";
 import { getSessionBusiness } from "@/lib/auth";
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: "Para Negocios — Precios al por mayor | Mi Tiendita PR",
+export const metadata: Metadata = {
+  title: "Para Negocios",
+  description:
+    "Precios mayoristas para gasolineras, farmacias, colmados y mini-markets en Puerto Rico. Regístrate con tu Registro de Comerciante.",
 };
 
 const BENEFITS = [
@@ -26,9 +29,20 @@ const STEPS = [
 export default async function ParaNegociosPage() {
   const business = await getSessionBusiness();
   const products = await listProducts({ activeOnly: true });
-  const samples = products
+  const sampleRaw = products
     .filter((p) => p.badges.includes("top") || p.badges.includes("viral"))
     .slice(0, 5);
+
+  // avgMargin se calcula server-side usando landedCost (campo interno, nunca va al cliente)
+  const avgMarginValue =
+    sampleRaw.length === 0
+      ? 0
+      : sampleRaw.reduce((s, p) => s + marginPct(p.wholesale, p.landedCost), 0) / sampleRaw.length;
+
+  // Tabla de ejemplos de ahorro: es marketing deliberado — muestra wholesale
+  // (precio mayorista es el argumento de venta de la página B2B). No se expone
+  // landedCost ni sourceUrl.
+  const samples = sampleRaw.map((p) => toPublicProduct(p, true));
 
   return (
     <>
@@ -57,7 +71,7 @@ export default async function ParaNegociosPage() {
             )}
           </div>
 
-          {/* savings table */}
+          {/* savings table — marketing deliberado: muestra precios mayoristas */}
           <div className="card overflow-hidden">
             <div className="px-5 py-3 text-sm font-bold" style={{ background: "var(--color-ink)", color: "var(--color-cream)" }}>
               Ejemplos de ahorro mayorista
@@ -76,9 +90,9 @@ export default async function ParaNegociosPage() {
                   <tr key={p.id} className="border-t" style={{ borderColor: "var(--color-line)" }}>
                     <td className="px-2 sm:px-4 py-2.5 font-medium">{p.emoji} {p.name.split(" ").slice(0, 2).join(" ")}</td>
                     <td className="px-2 sm:px-3 py-2.5 text-right tabular-nums" style={{ color: "var(--color-muted)" }}>{money(p.retail)}</td>
-                    <td className="px-2 sm:px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: "var(--color-teal-deep)" }}>{money(p.wholesale)}</td>
+                    <td className="px-2 sm:px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: "var(--color-teal-deep)" }}>{money(p.wholesale!)}</td>
                     <td className="px-2 sm:px-4 py-2.5 text-right">
-                      <span className="badge badge-top">−{pct(1 - p.wholesale / p.retail)}</span>
+                      <span className="badge badge-top">−{pct(1 - p.wholesale! / p.retail)}</span>
                     </td>
                   </tr>
                 ))}
@@ -126,7 +140,7 @@ export default async function ParaNegociosPage() {
       {/* margin proof */}
       <section className="wrap py-12">
         <div className="card-flat p-6 md:p-8 grid md:grid-cols-3 gap-6 text-center">
-          <Stat big={`${pct(avgMargin(samples))}`} label="Margen promedio para tu negocio" />
+          <Stat big={`${pct(avgMarginValue)}`} label="Margen promedio para tu negocio" />
           <Stat big={`${products.length}`} label="Productos virales en catálogo" />
           <Stat big="24-48h" label="Tiempo típico de verificación" />
         </div>
@@ -155,8 +169,3 @@ function Stat({ big, label }: { big: string; label: string }) {
   );
 }
 
-function avgMargin(products: Product[]): number {
-  if (!products.length) return 0;
-  const sum = products.reduce((s, p) => s + marginPct(p.wholesale, p.landedCost), 0);
-  return sum / products.length;
-}

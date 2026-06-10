@@ -1,12 +1,12 @@
 import Link from "next/link";
-import type { Product } from "@/lib/types";
+import type { PublicProduct } from "@/lib/public-product";
 import { ProductCard } from "./product-card";
 
 export function HomeFeatured({
   products,
   wholesale,
 }: {
-  products: Product[];
+  products: PublicProduct[];
   wholesale: boolean;
 }) {
   if (products.length === 0) return null;

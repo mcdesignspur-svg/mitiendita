@@ -13,7 +13,7 @@
   --color-cream-2: #f4ecdd;
   --color-ink: #1c1813;
   --color-ink-soft: #4b443a;
-  --color-muted: #8a8072;
+  --color-muted: #6f675a;
 
   --color-coral: #ff5a36;
   --color-coral-deep: #e23c19;
@@ -36,7 +36,7 @@
   }
 
   html {
-    scroll-behavior: smooth;
+    /* scroll-behavior: smooth se aplica solo con prefers-reduced-motion en @layer utilities */
   }
 
   body {
@@ -191,11 +191,25 @@
 }
 
 @layer utilities {
-  .reveal {
-    opacity: 0;
-    transform: translateY(14px);
-    animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  /* Animaciones solo cuando el usuario no pide movimiento reducido */
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+    }
+
+    .marquee-track {
+      animation: marquee 28s linear infinite;
+    }
   }
+
+  /* Fuera del media query: estado estático para usuarios que prefieren no-motion */
+  .reveal {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   @keyframes reveal {
     to { opacity: 1; transform: translateY(0); }
   }
@@ -203,12 +217,19 @@
   .marquee-track {
     display: flex;
     width: max-content;
-    animation: marquee 28s linear infinite;
   }
+
   @keyframes marquee {
     from { transform: translateX(0); }
     to   { transform: translateX(-50%); }
   }
 
   .text-balance { text-wrap: balance; }
+
+  /* scroll-behavior suave solo si no hay preferencia de reducción */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
 }

@@ -11,11 +11,20 @@ export const dynamic = "force-dynamic";
  * pendientes en la bitácora. Ver OPERATIONS.md §5.
  *
  * Auth: Vercel agrega `Authorization: Bearer <CRON_SECRET>` si CRON_SECRET está
- * configurado. Sin CRON_SECRET (dev) se permite para poder probarlo a mano.
+ * configurado. CR-5/A-1: En producción sin CRON_SECRET el endpoint se deniega
+ * (fail-closed). En dev sin CRON_SECRET se permite para pruebas locales.
  */
 function cronAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
+
+  // CR-5: En producción, si no hay CRON_SECRET configurado → denegar siempre.
+  // Antes: `if (!secret) return true` dejaba el cron público en prod.
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") return false;
+    // Dev sin CRON_SECRET: permitir para poder probar localmente.
+    return true;
+  }
+
   return (req.headers.get("authorization") || "") === `Bearer ${secret}`;
 }
 

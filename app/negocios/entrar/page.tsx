@@ -1,8 +1,10 @@
 import { LoginForm } from "@/components/business-forms";
 
-export const metadata = { title: "Acceso negocios — Mi Tiendita PR" };
+export const metadata = { title: "Acceso negocios" };
 
 export default function EntrarPage() {
+  const showDemo = process.env.NODE_ENV !== "production";
+
   return (
     <div className="wrap py-16 max-w-md">
       <div className="text-center mb-8">
@@ -12,7 +14,7 @@ export default function EntrarPage() {
           Accede a tu cuenta para ver precios mayoristas.
         </p>
       </div>
-      <LoginForm />
+      <LoginForm showDemo={showDemo} />
     </div>
   );
 }

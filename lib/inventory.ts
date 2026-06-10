@@ -3,7 +3,7 @@
  * `InventoryMovement`. Toda entrada/salida pasa por `adjustStock`, que actualiza
  * el saldo y deja el movimiento como rastro. Ver OPERATIONS.md §3.
  */
-import { getProductById, updateProduct, createInventoryMovement } from "./db";
+import { adjustProductStock, createInventoryMovement } from "./db";
 import type { AgentName, InventoryMovement, InventoryReason, Order } from "./types";
 
 /** Umbral por defecto para disparar recompra (stock bajo). */
@@ -23,13 +23,14 @@ export async function adjustStock(input: {
   note?: string;
   createdBy?: AgentName;
 }): Promise<InventoryMovement | null> {
-  const product = await getProductById(input.productId);
-  if (!product) return null;
-  const current = product.stock ?? 0;
-  const next = Math.max(0, current + input.delta);
-  const applied = next - current;
-  if (applied === 0) return null;
-  await updateProduct(input.productId, { stock: next });
+  // Ajuste ATÓMICO en el adaptador (A-7): aplica el delta con piso en 0 en una
+  // sola operación read-modify-write (file) / UPDATE...RETURNING (pg), eliminando
+  // el race que rompía el invariante stock === Σ movimientos. Devuelve el delta
+  // REALMENTE aplicado (acotado a 0) para registrar el movimiento consistente.
+  const result = await adjustProductStock(input.productId, input.delta);
+  if (!result) return null; // producto inexistente
+  const { product, applied } = result;
+  if (applied === 0) return null; // ya estaba en 0 y se intentó restar más
   return createInventoryMovement({
     productId: product.id,
     productName: product.name,

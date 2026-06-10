@@ -1,52 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import type { Product } from "@/lib/types";
+import Image from "next/image";
+import { useState, useEffect } from "react";
+import type { PublicProduct } from "@/lib/public-product";
+import { effectiveRetailPublic, hasDiscountPublic } from "@/lib/public-product";
 import { money } from "@/lib/format";
-import { effectiveRetail, hasDiscount, shippingOf } from "@/lib/products";
+import { safeImageUrl } from "@/lib/url-safe";
 import { useCart } from "./cart-context";
 
 export function ProductCard({
   product,
   wholesale,
 }: {
-  product: Product;
+  product: PublicProduct;
   wholesale: boolean;
 }) {
   const { add } = useCart();
   const [added, setAdded] = useState(false);
-  const retail = effectiveRetail(product);
-  const unitPrice = wholesale ? product.wholesale : retail;
-  const qty = wholesale ? product.moq : 1;
-  const showDiscount = !wholesale && hasDiscount(product);
+  const retail = effectiveRetailPublic(product);
+  const showDiscount = !wholesale && hasDiscountPublic(product);
+  const imgSrc = safeImageUrl(product.imageUrl);
 
+  // Fix: "+ Caja" añade unitsPerCase (no moq — bug B12 corregido)
   function handleAdd() {
-    add(
-      {
-        productId: product.id,
-        slug: product.slug,
-        name: product.name,
-        emoji: product.emoji,
-        unitPrice,
-        shippingPrice: shippingOf(product),
-      },
-      qty,
-    );
+    const qty = wholesale ? (product.unitsPerCase ?? 1) : 1;
+    add(product.id, qty);
     setAdded(true);
-    setTimeout(() => setAdded(false), 1300);
   }
+
+  // Cleanup del setTimeout al desmontar (evita setState en componente desmontado)
+  useEffect(() => {
+    if (!added) return;
+    const t = setTimeout(() => setAdded(false), 1300);
+    return () => clearTimeout(t);
+  }, [added]);
+
+  const isOutOfStock = product.stock === 0;
 
   return (
     <div className="card overflow-hidden flex flex-col group">
       <Link href={`/productos/${product.slug}`} className="block">
         <div className="relative aspect-[4/3] overflow-hidden" style={{ background: product.gradient }}>
-          {product.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={product.imageUrl}
+          {imgSrc ? (
+            <Image
+              src={imgSrc}
               alt={product.name}
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <span className="absolute inset-0 grid place-items-center text-6xl drop-shadow-lg transition-transform duration-300 group-hover:scale-110">
@@ -86,7 +88,7 @@ export function ProductCard({
 
         <div className="mt-4 flex items-end justify-between gap-2">
           <div>
-            {wholesale ? (
+            {wholesale && product.wholesale != null ? (
               <>
                 <div className="flex items-baseline gap-2">
                   <span className="font-display text-2xl" style={{ color: "var(--color-teal-deep)" }}>
@@ -97,7 +99,7 @@ export function ProductCard({
                   </span>
                 </div>
                 <span className="text-[11px] font-semibold" style={{ color: "var(--color-muted)" }}>
-                  Mayorista · mín. {product.moq} uds
+                  Precio mayorista por unidad
                 </span>
               </>
             ) : (
@@ -117,13 +119,19 @@ export function ProductCard({
             )}
           </div>
 
-          <button
-            onClick={handleAdd}
-            className="btn btn-primary btn-sm shrink-0"
-            aria-label={`Agregar ${product.name}`}
-          >
-            {added ? "✓ Listo" : wholesale ? "+ Caja" : "+ Añadir"}
-          </button>
+          {isOutOfStock ? (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: "var(--color-cream-2)", color: "var(--color-muted)", border: "1.5px solid var(--color-line)" }}>
+              Bajo pedido
+            </span>
+          ) : (
+            <button
+              onClick={handleAdd}
+              className="btn btn-primary btn-sm shrink-0"
+              aria-label={`Agregar ${product.name} al carrito`}
+            >
+              {added ? "✓ Listo" : wholesale ? "+ Caja" : "+ Añadir"}
+            </button>
+          )}
         </div>
       </div>
     </div>

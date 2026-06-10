@@ -47,8 +47,19 @@ async function main() {
     // Si ya quedó migrado, lo decimos pero igual lo dejamos consistente.
     const already = current.slug === seed.slug && current.category === seed.category;
 
-    const patch: Partial<typeof seed> = { ...seed };
-    delete patch.id;
+    // A-11: SOLO campos EDITORIALES. Excluimos explícitamente los operativos
+    // (stock, discountPercent, shippingPrice, grupoIds, active, precios, costos,
+    // moq, badges…) para no des-aplicar ventas ni revertir estado de operación
+    // al re-ejecutar esta migración idempotente.
+    const patch: Partial<typeof seed> = {
+      name: seed.name,
+      slug: seed.slug,
+      category: seed.category,
+      tagline: seed.tagline,
+      description: seed.description,
+      tags: seed.tags,
+      segments: seed.segments,
+    };
 
     const res = await updateProduct(id, patch);
     if (res) {

@@ -1,5 +1,7 @@
 import { getOrderById, updateOrder } from "./db";
 import { notifyOrderConfirmation } from "./notify";
+import { applyOrderInventory } from "./inventory";
+import { money2 } from "./money";
 
 /**
  * Integración ATH Móvil (Evertec).
@@ -22,27 +24,61 @@ export function athConfig() {
 }
 
 /**
- * Valida y marca pagada una orden de ATH Móvil. Idempotente.
- * Verifica que el pago esté COMPLETED y que el monto coincida con la orden.
+ * CR-2: verifica server-to-server el pago de una orden ATH Móvil contra la API
+ * de ATH (fuente de verdad) y, si está COMPLETED y el monto coincide con la
+ * orden, la marca pagada. Idempotente: si ya está pagada, no re-aplica nada.
+ *
+ * NUNCA confía en lo que diga el cliente o el body del webhook: re-consulta a
+ * ATH con `athFindPayment` usando el ecommerceId persistido en la orden y el
+ * ATHM_PRIVATE_TOKEN del servidor. Solo aquí (al pasar a "pagada") se descuenta
+ * el inventario (CR-3/A-8). Es seguro contra doble-llamada porque el guard de
+ * "ya pagada" corta antes de aplicar inventario de nuevo.
  */
 export async function confirmAthPayment(opts: {
   orderId: string;
-  status: string;
-  total: number;
-  reference?: string;
+  /** ecommerceId reportado por el callback/webhook; se persiste si la orden aún
+   *  no lo tiene (el modal de ATH lo genera del lado del cliente). */
+  ecommerceId?: string;
 }): Promise<{ ok: boolean; reason?: string }> {
-  const order = await getOrderById(opts.orderId);
+  let order = await getOrderById(opts.orderId);
   if (!order) return { ok: false, reason: "orden no encontrada" };
   if (order.paymentStatus === "pagada") return { ok: true };
-  if (opts.status.toUpperCase() !== "COMPLETED") return { ok: false, reason: "pago no completado" };
-  if (Math.abs((opts.total || 0) - order.total) > 0.01) return { ok: false, reason: "monto no coincide" };
+
+  // Persiste el ecommerceId la primera vez que lo conocemos (lo trae el webhook
+  // o el callback del botón). Nunca lo sobreescribimos una vez fijado.
+  const ecommerceId = order.athEcommerceId || (opts.ecommerceId || "").trim();
+  if (!ecommerceId) return { ok: false, reason: "orden sin ecommerceId de ATH" };
+  if (!order.athEcommerceId) {
+    order = (await updateOrder(order.id, { athEcommerceId: ecommerceId })) ?? order;
+  }
+
+  const { privateToken } = athConfig();
+  if (!privateToken) return { ok: false, reason: "falta ATHM_PRIVATE_TOKEN" };
+
+  // Fuente de verdad: re-consulta el estado real a ATH.
+  let txn: AthTxn;
+  try {
+    txn = await athFindPayment(ecommerceId, privateToken);
+  } catch {
+    return { ok: false, reason: "no se pudo verificar con ATH" };
+  }
+
+  const status = String(txn.ecommerceStatus ?? "").toUpperCase();
+  if (status !== "COMPLETED") return { ok: false, reason: "pago no completado" };
+  const athTotal = Number(txn.total ?? 0);
+  if (Math.abs(money2(athTotal) - money2(order.total)) > 0.01) {
+    return { ok: false, reason: "monto no coincide" };
+  }
 
   const updated = await updateOrder(order.id, {
     paymentStatus: "pagada",
     status: "procesando",
-    paymentRef: opts.reference,
+    paymentRef: txn.referenceNumber,
   });
-  if (updated) await notifyOrderConfirmation(updated).catch(() => {});
+  if (updated) {
+    await applyOrderInventory(updated).catch(() => {});
+    await notifyOrderConfirmation(updated).catch(() => {});
+  }
   return { ok: true };
 }
 

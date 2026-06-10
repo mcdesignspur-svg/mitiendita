@@ -33,6 +33,8 @@ import { SEED_CANDIDATES, SEED_SUPPLIERS } from "./sourcing";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+const TMP_FILE = `${DB_FILE}.tmp`;
+const LOCK_FILE = `${DB_FILE}.lock`;
 
 interface DB {
   businesses: Business[];
@@ -97,18 +99,38 @@ function seed(): DB {
 }
 
 function read(): DB {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(DB_FILE)) {
-      const initial = seed();
-      fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2));
-      return initial;
-    }
-    const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8")) as Partial<DB>;
-    return migrate(parsed);
-  } catch {
-    return seed();
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  // Archivo AUSENTE: estado de primer arranque → sembrar es correcto.
+  if (!fs.existsSync(DB_FILE)) {
+    const initial = seed();
+    writeRaw(initial);
+    return initial;
   }
+  // Archivo PRESENTE: si el parse falla, está corrupto. NUNCA re-sembrar aquí
+  // (eso borraría datos reales). Preservamos el archivo dañado y relanzamos.
+  let raw: string;
+  try {
+    raw = fs.readFileSync(DB_FILE, "utf8");
+  } catch (e) {
+    throw new Error(`[db-file] No se pudo leer ${DB_FILE}: ${(e as Error).message}`);
+  }
+  let parsed: Partial<DB>;
+  try {
+    parsed = JSON.parse(raw) as Partial<DB>;
+  } catch (e) {
+    const backup = `${DB_FILE}.corrupt-${Date.now()}`;
+    try {
+      fs.renameSync(DB_FILE, backup);
+    } catch {
+      /* si ni renombrar se puede, igual relanzamos abajo */
+    }
+    console.error(
+      `[db-file] ⛔ db.json corrupto (parse falló). NO se re-siembra para no destruir datos. ` +
+        `Copia preservada en ${backup}. Error: ${(e as Error).message}`,
+    );
+    throw new Error(`[db-file] db.json corrupto; respaldado en ${backup}`);
+  }
+  return migrate(parsed);
 }
 
 /** Rellena claves faltantes en archivos viejos (ej. el store sin productos). */
@@ -129,7 +151,10 @@ function migrate(db: Partial<DB>): DB {
     campaigns: db.campaigns ?? [],
   };
   let dirty = false;
-  if (!db.products || db.products.length === 0) {
+  // Solo re-sembramos cuando la clave NO existe (store viejo). Un arreglo vacío
+  // es un estado legítimo (borrar todos los productos) y NO debe resucitar el
+  // catálogo semilla.
+  if (db.products === undefined) {
     full.products = SEED_PRODUCTS;
     dirty = true;
   }
@@ -176,13 +201,97 @@ function migrate(db: Partial<DB>): DB {
     full.campaigns = [];
     dirty = true;
   }
-  if (dirty) write(full);
+  if (dirty) writeRaw(full);
   return full;
 }
 
-function write(db: DB): void {
+/**
+ * Escritura ATÓMICA: escribe a un archivo temporal y luego `renameSync` (atómico
+ * en el mismo filesystem) para que un crash a mitad de escritura no deje un
+ * db.json truncado/corrupto. No toma el lock — los llamadores que hacen
+ * read-modify-write deben envolverse en `mutate()`.
+ */
+function writeRaw(db: DB): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  fs.writeFileSync(TMP_FILE, JSON.stringify(db, null, 2));
+  fs.renameSync(TMP_FILE, DB_FILE);
+}
+
+/**
+ * Lock entre procesos (best-effort). El CLI del operador, los scripts tsx y el
+ * dev server comparten el mismo db.json; sin esto, dos read-modify-write
+ * concurrentes se pisan (last-write-wins) y se pierden escrituras.
+ *
+ * LIMITACIÓN: es un lock cooperativo basado en `open(..., "wx")` sobre un
+ * archivo `.lock`. Es síncrono y bloqueante (busy-wait corto). Si un proceso
+ * muere sin liberar, el lock se considera "stale" pasado `LOCK_STALE_MS` y se
+ * roba. Esto NO sustituye una base de datos real con transacciones — para
+ * concurrencia seria, usar Postgres (DATABASE_URL).
+ */
+const LOCK_STALE_MS = 5000;
+const LOCK_RETRY_MS = 15;
+const LOCK_MAX_WAIT_MS = 4000;
+
+function spinWait(ms: number): void {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    /* busy-wait corto: este store es síncrono por diseño */
+  }
+}
+
+function acquireLock(): boolean {
+  const deadline = Date.now() + LOCK_MAX_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = fs.openSync(LOCK_FILE, "wx");
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return true;
+    } catch {
+      // Lock tomado. ¿Es stale (proceso muerto que no lo liberó)?
+      try {
+        const age = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
+        if (age > LOCK_STALE_MS) {
+          try {
+            fs.unlinkSync(LOCK_FILE);
+          } catch {
+            /* otro proceso lo robó primero */
+          }
+          continue;
+        }
+      } catch {
+        /* el lock desapareció entre el catch y el stat → reintenta */
+      }
+      if (Date.now() > deadline) return false; // best-effort: seguimos sin lock
+      spinWait(LOCK_RETRY_MS);
+    }
+  }
+}
+
+function releaseLock(held: boolean): void {
+  if (!held) return;
+  try {
+    fs.unlinkSync(LOCK_FILE);
+  } catch {
+    /* ya liberado */
+  }
+}
+
+/**
+ * Read-modify-write SERIALIZADO. Toma el lock, lee el estado fresco del disco,
+ * deja que `fn` lo mute, persiste atómicamente y libera. Todas las escrituras
+ * pasan por aquí para que dos procesos no se pisen.
+ */
+function mutate<T>(fn: (db: DB) => T): T {
+  const held = acquireLock();
+  try {
+    const db = read();
+    const result = fn(db);
+    writeRaw(db);
+    return result;
+  } finally {
+    releaseLock(held);
+  }
 }
 
 function id(prefix: string): string {
@@ -214,28 +323,31 @@ export async function getBusinessByEmail(email: string): Promise<Business | unde
 export async function createBusiness(
   input: Omit<Business, "id" | "status" | "createdAt">,
 ): Promise<Business> {
-  const db = read();
-  const business: Business = {
-    ...input,
-    id: id("b"),
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
-  db.businesses.push(business);
-  write(db);
-  return business;
+  return mutate((db) => {
+    const business: Business = {
+      ...input,
+      // Normaliza el email a minúsculas (paridad con la búsqueda case-insensitive
+      // de getBusinessByEmail y con lo que persiste el adaptador Postgres).
+      email: input.email.toLowerCase(),
+      id: id("b"),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    db.businesses.push(business);
+    return business;
+  });
 }
 
 export async function setBusinessStatus(
   bid: string,
   status: Business["status"],
 ): Promise<Business | undefined> {
-  const db = read();
-  const b = db.businesses.find((x) => x.id === bid);
-  if (!b) return undefined;
-  b.status = status;
-  write(db);
-  return b;
+  return mutate((db) => {
+    const b = db.businesses.find((x) => x.id === bid);
+    if (!b) return undefined;
+    b.status = status;
+    return b;
+  });
 }
 
 // --- Orders -----------------------------------------------------
@@ -250,28 +362,30 @@ export async function getOrderById(oid: string): Promise<Order | undefined> {
 export async function createOrder(
   input: Omit<Order, "id" | "createdAt" | "status">,
 ): Promise<Order> {
-  const db = read();
-  const order: Order = {
-    ...input,
-    id: id("o"),
-    status: "nuevo",
-    createdAt: new Date().toISOString(),
-  };
-  db.orders.push(order);
-  write(db);
-  return order;
+  return mutate((db) => {
+    // `...input` arrastra todos los campos del Order, incluido el opcional
+    // `athEcommerceId` (id de transacción de ATH Móvil) cuando viene presente.
+    const order: Order = {
+      ...input,
+      id: id("o"),
+      status: "nuevo",
+      createdAt: new Date().toISOString(),
+    };
+    db.orders.push(order);
+    return order;
+  });
 }
 
 export async function updateOrder(
   oid: string,
   patch: Partial<Order>,
 ): Promise<Order | undefined> {
-  const db = read();
-  const o = db.orders.find((x) => x.id === oid);
-  if (!o) return undefined;
-  Object.assign(o, patch);
-  write(db);
-  return o;
+  return mutate((db) => {
+    const o = db.orders.find((x) => x.id === oid);
+    if (!o) return undefined;
+    Object.assign(o, patch);
+    return o;
+  });
 }
 
 // --- Products ---------------------------------------------------
@@ -291,38 +405,60 @@ export async function getProductById(pid: string): Promise<Product | undefined> 
 export async function createProduct(
   input: Omit<Product, "id" | "slug"> & { slug?: string },
 ): Promise<Product> {
-  const db = read();
-  const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
-  const slug = uniqueSlug(db.products, base);
-  const product: Product = { ...input, id: id("p"), slug };
-  db.products.push(product);
-  write(db);
-  return product;
+  return mutate((db) => {
+    const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
+    const slug = uniqueSlug(db.products, base);
+    const product: Product = { ...input, id: id("p"), slug };
+    db.products.push(product);
+    return product;
+  });
 }
 
 export async function updateProduct(
   pid: string,
   patch: Partial<Product>,
 ): Promise<Product | undefined> {
-  const db = read();
-  const p = db.products.find((x) => x.id === pid);
-  if (!p) return undefined;
-  const { slug, ...rest } = patch;
-  Object.assign(p, rest);
-  if (slug) {
-    p.slug = uniqueSlug(db.products.filter((x) => x.id !== pid), slugify(slug));
-  }
-  write(db);
-  return p;
+  return mutate((db) => {
+    const p = db.products.find((x) => x.id === pid);
+    if (!p) return undefined;
+    const { slug, ...rest } = patch;
+    Object.assign(p, rest);
+    // slug === "" no debe sobrescribir el slug existente con vacío (paridad con pg).
+    if (slug) {
+      p.slug = uniqueSlug(db.products.filter((x) => x.id !== pid), slugify(slug));
+    }
+    return p;
+  });
 }
 
 export async function deleteProduct(pid: string): Promise<boolean> {
-  const db = read();
-  const before = db.products.length;
-  db.products = db.products.filter((p) => p.id !== pid);
-  const removed = db.products.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.products.length;
+    db.products = db.products.filter((p) => p.id !== pid);
+    return db.products.length < before;
+  });
+}
+
+/**
+ * Ajuste ATÓMICO de stock (A-7). Lee el stock fresco bajo lock, aplica el delta
+ * con piso en 0 y persiste en UNA sola operación read-modify-write. Devuelve el
+ * producto resultante y el delta REALMENTE aplicado (`next - current`), para que
+ * el llamador (lib/inventory.ts) registre el movimiento con ese mismo valor y se
+ * preserve el invariante `stock === Σ movimientos`. `null` si el producto no
+ * existe.
+ */
+export async function adjustProductStock(
+  pid: string,
+  delta: number,
+): Promise<{ product: Product; applied: number } | null> {
+  return mutate((db) => {
+    const p = db.products.find((x) => x.id === pid);
+    if (!p) return null;
+    const current = p.stock ?? 0;
+    const next = Math.max(0, current + delta);
+    p.stock = next;
+    return { product: p, applied: next - current };
+  });
 }
 
 export async function relatedProducts(slug: string, n = 3): Promise<Product[]> {
@@ -360,38 +496,37 @@ export async function getGrupoById(gid: string): Promise<Grupo | undefined> {
 export async function createGrupo(
   input: Omit<Grupo, "id" | "slug" | "createdAt"> & { slug?: string },
 ): Promise<Grupo> {
-  const db = read();
-  const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
-  const slug = uniqueGrupoSlug(db.grupos, base);
-  const grupo: Grupo = { ...input, id: id("g"), slug, createdAt: new Date().toISOString() };
-  db.grupos.push(grupo);
-  write(db);
-  return grupo;
+  return mutate((db) => {
+    const base = input.slug?.trim() ? slugify(input.slug) : slugify(input.name);
+    const slug = uniqueGrupoSlug(db.grupos, base);
+    const grupo: Grupo = { ...input, id: id("g"), slug, createdAt: new Date().toISOString() };
+    db.grupos.push(grupo);
+    return grupo;
+  });
 }
 
 export async function updateGrupo(
   gid: string,
   patch: Partial<Grupo>,
 ): Promise<Grupo | undefined> {
-  const db = read();
-  const g = db.grupos.find((x) => x.id === gid);
-  if (!g) return undefined;
-  const { slug, ...rest } = patch;
-  Object.assign(g, rest);
-  if (slug) {
-    g.slug = uniqueGrupoSlug(db.grupos.filter((x) => x.id !== gid), slugify(slug));
-  }
-  write(db);
-  return g;
+  return mutate((db) => {
+    const g = db.grupos.find((x) => x.id === gid);
+    if (!g) return undefined;
+    const { slug, ...rest } = patch;
+    Object.assign(g, rest);
+    if (slug) {
+      g.slug = uniqueGrupoSlug(db.grupos.filter((x) => x.id !== gid), slugify(slug));
+    }
+    return g;
+  });
 }
 
 export async function deleteGrupo(gid: string): Promise<boolean> {
-  const db = read();
-  const before = db.grupos.length;
-  db.grupos = db.grupos.filter((g) => g.id !== gid);
-  const removed = db.grupos.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.grupos.length;
+    db.grupos = db.grupos.filter((g) => g.id !== gid);
+    return db.grupos.length < before;
+  });
 }
 
 // --- Sourcing candidates ----------------------------------------
@@ -406,36 +541,35 @@ export async function getCandidateById(cid: string): Promise<SourcingCandidate |
 export async function createCandidate(
   input: Omit<SourcingCandidate, "id" | "createdAt">,
 ): Promise<SourcingCandidate> {
-  const db = read();
-  const candidate: SourcingCandidate = {
-    ...input,
-    id: id("s"),
-    createdAt: new Date().toISOString(),
-  };
-  db.sourcingCandidates.push(candidate);
-  write(db);
-  return candidate;
+  return mutate((db) => {
+    const candidate: SourcingCandidate = {
+      ...input,
+      id: id("s"),
+      createdAt: new Date().toISOString(),
+    };
+    db.sourcingCandidates.push(candidate);
+    return candidate;
+  });
 }
 
 export async function updateCandidate(
   cid: string,
   patch: Partial<SourcingCandidate>,
 ): Promise<SourcingCandidate | undefined> {
-  const db = read();
-  const c = db.sourcingCandidates.find((x) => x.id === cid);
-  if (!c) return undefined;
-  Object.assign(c, patch);
-  write(db);
-  return c;
+  return mutate((db) => {
+    const c = db.sourcingCandidates.find((x) => x.id === cid);
+    if (!c) return undefined;
+    Object.assign(c, patch);
+    return c;
+  });
 }
 
 export async function deleteCandidate(cid: string): Promise<boolean> {
-  const db = read();
-  const before = db.sourcingCandidates.length;
-  db.sourcingCandidates = db.sourcingCandidates.filter((c) => c.id !== cid);
-  const removed = db.sourcingCandidates.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.sourcingCandidates.length;
+    db.sourcingCandidates = db.sourcingCandidates.filter((c) => c.id !== cid);
+    return db.sourcingCandidates.length < before;
+  });
 }
 
 // --- Suppliers --------------------------------------------------
@@ -450,37 +584,36 @@ export async function getSupplierById(sid: string): Promise<Supplier | undefined
 export async function createSupplier(
   input: Omit<Supplier, "id" | "createdAt" | "status"> & { status?: SupplierStatus },
 ): Promise<Supplier> {
-  const db = read();
-  const supplier: Supplier = {
-    ...input,
-    status: input.status ?? "nuevo",
-    id: id("sup"),
-    createdAt: new Date().toISOString(),
-  };
-  db.suppliers.push(supplier);
-  write(db);
-  return supplier;
+  return mutate((db) => {
+    const supplier: Supplier = {
+      ...input,
+      status: input.status ?? "nuevo",
+      id: id("sup"),
+      createdAt: new Date().toISOString(),
+    };
+    db.suppliers.push(supplier);
+    return supplier;
+  });
 }
 
 export async function updateSupplier(
   sid: string,
   patch: Partial<Supplier>,
 ): Promise<Supplier | undefined> {
-  const db = read();
-  const s = db.suppliers.find((x) => x.id === sid);
-  if (!s) return undefined;
-  Object.assign(s, patch);
-  write(db);
-  return s;
+  return mutate((db) => {
+    const s = db.suppliers.find((x) => x.id === sid);
+    if (!s) return undefined;
+    Object.assign(s, patch);
+    return s;
+  });
 }
 
 export async function deleteSupplier(sid: string): Promise<boolean> {
-  const db = read();
-  const before = db.suppliers.length;
-  db.suppliers = db.suppliers.filter((s) => s.id !== sid);
-  const removed = db.suppliers.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.suppliers.length;
+    db.suppliers = db.suppliers.filter((s) => s.id !== sid);
+    return db.suppliers.length < before;
+  });
 }
 
 // --- Approval tasks (cerebro de control) ------------------------
@@ -498,37 +631,36 @@ export async function getApprovalTaskById(tid: string): Promise<ApprovalTask | u
 export async function createApprovalTask(
   input: Omit<ApprovalTask, "id" | "createdAt" | "status"> & { status?: ApprovalStatus },
 ): Promise<ApprovalTask> {
-  const db = read();
-  const task: ApprovalTask = {
-    ...input,
-    status: input.status ?? "pendiente",
-    id: id("at"),
-    createdAt: new Date().toISOString(),
-  };
-  db.approvalTasks.push(task);
-  write(db);
-  return task;
+  return mutate((db) => {
+    const task: ApprovalTask = {
+      ...input,
+      status: input.status ?? "pendiente",
+      id: id("at"),
+      createdAt: new Date().toISOString(),
+    };
+    db.approvalTasks.push(task);
+    return task;
+  });
 }
 
 export async function updateApprovalTask(
   tid: string,
   patch: Partial<ApprovalTask>,
 ): Promise<ApprovalTask | undefined> {
-  const db = read();
-  const t = db.approvalTasks.find((x) => x.id === tid);
-  if (!t) return undefined;
-  Object.assign(t, patch);
-  write(db);
-  return t;
+  return mutate((db) => {
+    const t = db.approvalTasks.find((x) => x.id === tid);
+    if (!t) return undefined;
+    Object.assign(t, patch);
+    return t;
+  });
 }
 
 export async function deleteApprovalTask(tid: string): Promise<boolean> {
-  const db = read();
-  const before = db.approvalTasks.length;
-  db.approvalTasks = db.approvalTasks.filter((t) => t.id !== tid);
-  const removed = db.approvalTasks.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.approvalTasks.length;
+    db.approvalTasks = db.approvalTasks.filter((t) => t.id !== tid);
+    return db.approvalTasks.length < before;
+  });
 }
 
 // --- Agent runs (bitácora) --------------------------------------
@@ -539,11 +671,11 @@ export async function listAgentRuns(limit = 50): Promise<AgentRun[]> {
 }
 
 export async function createAgentRun(input: Omit<AgentRun, "id" | "createdAt">): Promise<AgentRun> {
-  const db = read();
-  const run: AgentRun = { ...input, id: id("run"), createdAt: new Date().toISOString() };
-  db.agentRuns.push(run);
-  write(db);
-  return run;
+  return mutate((db) => {
+    const run: AgentRun = { ...input, id: id("run"), createdAt: new Date().toISOString() };
+    db.agentRuns.push(run);
+    return run;
+  });
 }
 
 // --- Quotes (cotizaciones) --------------------------------------
@@ -552,20 +684,19 @@ export async function listQuotes(): Promise<Quote[]> {
 }
 
 export async function createQuote(input: Omit<Quote, "id" | "createdAt">): Promise<Quote> {
-  const db = read();
-  const quote: Quote = { ...input, id: id("q"), createdAt: new Date().toISOString() };
-  db.quotes.push(quote);
-  write(db);
-  return quote;
+  return mutate((db) => {
+    const quote: Quote = { ...input, id: id("q"), createdAt: new Date().toISOString() };
+    db.quotes.push(quote);
+    return quote;
+  });
 }
 
 export async function deleteQuote(qid: string): Promise<boolean> {
-  const db = read();
-  const before = db.quotes.length;
-  db.quotes = db.quotes.filter((q) => q.id !== qid);
-  const removed = db.quotes.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.quotes.length;
+    db.quotes = db.quotes.filter((q) => q.id !== qid);
+    return db.quotes.length < before;
+  });
 }
 
 // --- Purchase orders (órdenes de compra) ------------------------
@@ -580,37 +711,36 @@ export async function getPurchaseOrderById(pid: string): Promise<PurchaseOrder |
 export async function createPurchaseOrder(
   input: Omit<PurchaseOrder, "id" | "createdAt" | "status"> & { status?: PurchaseOrderStatus },
 ): Promise<PurchaseOrder> {
-  const db = read();
-  const po: PurchaseOrder = {
-    ...input,
-    status: input.status ?? "borrador",
-    id: id("po"),
-    createdAt: new Date().toISOString(),
-  };
-  db.purchaseOrders.push(po);
-  write(db);
-  return po;
+  return mutate((db) => {
+    const po: PurchaseOrder = {
+      ...input,
+      status: input.status ?? "borrador",
+      id: id("po"),
+      createdAt: new Date().toISOString(),
+    };
+    db.purchaseOrders.push(po);
+    return po;
+  });
 }
 
 export async function updatePurchaseOrder(
   pid: string,
   patch: Partial<PurchaseOrder>,
 ): Promise<PurchaseOrder | undefined> {
-  const db = read();
-  const p = db.purchaseOrders.find((x) => x.id === pid);
-  if (!p) return undefined;
-  Object.assign(p, patch);
-  write(db);
-  return p;
+  return mutate((db) => {
+    const p = db.purchaseOrders.find((x) => x.id === pid);
+    if (!p) return undefined;
+    Object.assign(p, patch);
+    return p;
+  });
 }
 
 export async function deletePurchaseOrder(pid: string): Promise<boolean> {
-  const db = read();
-  const before = db.purchaseOrders.length;
-  db.purchaseOrders = db.purchaseOrders.filter((p) => p.id !== pid);
-  const removed = db.purchaseOrders.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.purchaseOrders.length;
+    db.purchaseOrders = db.purchaseOrders.filter((p) => p.id !== pid);
+    return db.purchaseOrders.length < before;
+  });
 }
 
 // --- Shipments (embarques) --------------------------------------
@@ -621,37 +751,36 @@ export async function listShipments(): Promise<Shipment[]> {
 export async function createShipment(
   input: Omit<Shipment, "id" | "createdAt" | "status"> & { status?: ShipmentStatus },
 ): Promise<Shipment> {
-  const db = read();
-  const shipment: Shipment = {
-    ...input,
-    status: input.status ?? "preparando",
-    id: id("sh"),
-    createdAt: new Date().toISOString(),
-  };
-  db.shipments.push(shipment);
-  write(db);
-  return shipment;
+  return mutate((db) => {
+    const shipment: Shipment = {
+      ...input,
+      status: input.status ?? "preparando",
+      id: id("sh"),
+      createdAt: new Date().toISOString(),
+    };
+    db.shipments.push(shipment);
+    return shipment;
+  });
 }
 
 export async function updateShipment(
   sid: string,
   patch: Partial<Shipment>,
 ): Promise<Shipment | undefined> {
-  const db = read();
-  const s = db.shipments.find((x) => x.id === sid);
-  if (!s) return undefined;
-  Object.assign(s, patch);
-  write(db);
-  return s;
+  return mutate((db) => {
+    const s = db.shipments.find((x) => x.id === sid);
+    if (!s) return undefined;
+    Object.assign(s, patch);
+    return s;
+  });
 }
 
 export async function deleteShipment(sid: string): Promise<boolean> {
-  const db = read();
-  const before = db.shipments.length;
-  db.shipments = db.shipments.filter((s) => s.id !== sid);
-  const removed = db.shipments.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.shipments.length;
+    db.shipments = db.shipments.filter((s) => s.id !== sid);
+    return db.shipments.length < before;
+  });
 }
 
 // --- Inventory movements (inventario) ---------------------------
@@ -666,11 +795,11 @@ export async function listInventoryMovements(
 export async function createInventoryMovement(
   input: Omit<InventoryMovement, "id" | "createdAt">,
 ): Promise<InventoryMovement> {
-  const db = read();
-  const mv: InventoryMovement = { ...input, id: id("mv"), createdAt: new Date().toISOString() };
-  db.inventoryMovements.push(mv);
-  write(db);
-  return mv;
+  return mutate((db) => {
+    const mv: InventoryMovement = { ...input, id: id("mv"), createdAt: new Date().toISOString() };
+    db.inventoryMovements.push(mv);
+    return mv;
+  });
 }
 
 // --- Campaigns (promociones) ------------------------------------
@@ -685,35 +814,34 @@ export async function getCampaignById(cid: string): Promise<Campaign | undefined
 export async function createCampaign(
   input: Omit<Campaign, "id" | "createdAt" | "status"> & { status?: CampaignStatus },
 ): Promise<Campaign> {
-  const db = read();
-  const campaign: Campaign = {
-    ...input,
-    status: input.status ?? "borrador",
-    id: id("camp"),
-    createdAt: new Date().toISOString(),
-  };
-  db.campaigns.push(campaign);
-  write(db);
-  return campaign;
+  return mutate((db) => {
+    const campaign: Campaign = {
+      ...input,
+      status: input.status ?? "borrador",
+      id: id("camp"),
+      createdAt: new Date().toISOString(),
+    };
+    db.campaigns.push(campaign);
+    return campaign;
+  });
 }
 
 export async function updateCampaign(
   cid: string,
   patch: Partial<Campaign>,
 ): Promise<Campaign | undefined> {
-  const db = read();
-  const c = db.campaigns.find((x) => x.id === cid);
-  if (!c) return undefined;
-  Object.assign(c, patch);
-  write(db);
-  return c;
+  return mutate((db) => {
+    const c = db.campaigns.find((x) => x.id === cid);
+    if (!c) return undefined;
+    Object.assign(c, patch);
+    return c;
+  });
 }
 
 export async function deleteCampaign(cid: string): Promise<boolean> {
-  const db = read();
-  const before = db.campaigns.length;
-  db.campaigns = db.campaigns.filter((c) => c.id !== cid);
-  const removed = db.campaigns.length < before;
-  if (removed) write(db);
-  return removed;
+  return mutate((db) => {
+    const before = db.campaigns.length;
+    db.campaigns = db.campaigns.filter((c) => c.id !== cid);
+    return db.campaigns.length < before;
+  });
 }

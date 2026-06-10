@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { createOrder } from "@/lib/db";
 import { athEnabled } from "@/lib/athmovil";
-import type { OrderItem } from "@/lib/types";
+import { priceCart, parseIntentLines, isPricedError } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 
-/** Crea la orden ATH Móvil (pendiente) para renderizar el botón en el carrito. */
+/**
+ * Crea la orden ATH Móvil (pendiente_pago) para renderizar el botón en el
+ * carrito. CR-1: el cliente solo manda intención [{productId, qty}]; precios,
+ * envío y total se recalculan server-side (priceCart). El inventario NO se
+ * descuenta aquí — se descuenta cuando el pago se confirma (webhook/confirm).
+ */
 export async function POST(req: Request) {
   if (!athEnabled()) {
     return NextResponse.json({ error: "ATH Móvil no está disponible." }, { status: 503 });
   }
-  let body: { customerName?: string; email?: string; items?: OrderItem[]; shipping?: number };
+  let body: { customerName?: string; email?: string; items?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -25,24 +30,27 @@ export async function POST(req: Request) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return NextResponse.json({ error: "Email inválido." }, { status: 400 });
   }
-  const items: OrderItem[] = Array.isArray(body.items) ? body.items : [];
-  if (!items.length) {
-    return NextResponse.json({ error: "Tu carrito está vacío." }, { status: 400 });
+
+  const priced = await priceCart(parseIntentLines(body.items));
+  if (isPricedError(priced)) {
+    return NextResponse.json({ error: priced.error }, { status: 400 });
   }
-  const shipping = Math.max(0, Number(body.shipping) || 0);
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const total = subtotal + shipping;
-  if (total < 1 || total > 1500) {
+  // Cash-first: ATH Móvil sirve tanto B2C como B2B (el negocio paga ahora, no
+  // por factura). priceCart ya derivó kind/businessId desde la sesión y validó
+  // el mínimo mayorista. El tope de $1,500 es el límite de ATH Móvil; pedidos
+  // mayores se pagan con tarjeta (Stripe).
+  if (priced.total < 1 || priced.total > 1500) {
     return NextResponse.json({ error: "ATH Móvil acepta pagos de $1 a $1,500." }, { status: 400 });
   }
 
   const order = await createOrder({
-    kind: "b2c",
+    kind: priced.kind,
+    businessId: priced.businessId,
     customerName,
     email,
-    items,
-    shipping,
-    total,
+    items: priced.items,
+    shipping: priced.shipping,
+    total: priced.total,
     paymentStatus: "pendiente_pago",
     paymentMethod: "ath_movil",
   });

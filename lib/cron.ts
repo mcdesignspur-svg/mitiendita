@@ -7,11 +7,13 @@
 import {
   listProducts,
   listApprovalTasks,
+  listPurchaseOrders,
   listSuppliers,
   listOrders,
   listCampaigns,
   updateCampaign,
   updateProduct,
+  updateOrder,
 } from "./db";
 import { createTask, logRun } from "./control";
 import { LOW_STOCK_THRESHOLD } from "./inventory";
@@ -21,29 +23,57 @@ export interface DailySummary {
   campaignsFinalized: number;
   followUps: number;
   ordersPending: number;
+  ordersCancelled: number;
 }
 
 const DAY = 86_400_000;
 
 export async function runDailyMaintenance(): Promise<DailySummary> {
-  const summary: DailySummary = { recompra: 0, campaignsFinalized: 0, followUps: 0, ordersPending: 0 };
+  const summary: DailySummary = {
+    recompra: 0,
+    campaignsFinalized: 0,
+    followUps: 0,
+    ordersPending: 0,
+    ordersCancelled: 0,
+  };
   const now = Date.now();
 
   // a) Reabastecimiento: stock bajo → gate de recompra (sin duplicar).
-  const [products, pending] = await Promise.all([
+  //    M-2/CR-3: excluye:
+  //      1) Productos con tarea de recompra pendiente.
+  //      2) Productos con una recompra aprobada (tarea aprobada sin ejecutar).
+  //      3) Productos con una OC abierta (status ∉ {recibida, cancelada}).
+  const [products, allTasks, purchaseOrders] = await Promise.all([
     listProducts(),
-    listApprovalTasks({ status: "pendiente" }),
+    listApprovalTasks(),
+    listPurchaseOrders(),
   ]);
-  const alreadyQueued = new Set(
-    pending
-      .filter((t) => t.kind === "recompra")
+
+  // Productos con tarea de recompra pendiente o aprobada-sin-ejecutar.
+  const blockedByTask = new Set(
+    allTasks
+      .filter(
+        (t) =>
+          t.kind === "recompra" &&
+          (t.status === "pendiente" || (t.status === "aprobada" && !t.executedAt)),
+      )
       .map((t) => t.relatedId ?? (t.payload?.productId as string | undefined))
       .filter(Boolean) as string[],
   );
+
+  // Productos con una OC abierta (no recibida ni cancelada).
+  const blockedByPO = new Set(
+    purchaseOrders
+      .filter((po) => po.productId && po.status !== "recibida" && po.status !== "cancelada")
+      .map((po) => po.productId as string),
+  );
+
   for (const p of products) {
     if (p.active === false) continue;
     if ((p.stock ?? 0) > LOW_STOCK_THRESHOLD) continue;
-    if (alreadyQueued.has(p.id)) continue;
+    if (blockedByTask.has(p.id)) continue;
+    if (blockedByPO.has(p.id)) continue;
+
     const qty = Math.max(p.unitsPerCase ?? 1, p.moq ?? 1, 24);
     await createTask({
       kind: "recompra",
@@ -77,17 +107,26 @@ export async function runDailyMaintenance(): Promise<DailySummary> {
     }
   }
 
-  // d) Reconciliación: pedidos pendientes de pago hace 2+ días.
+  // d) Reconciliación: pedidos pendientes de pago hace 2+ días → contar.
+  //    M-2/CR-3(b): cancela órdenes pendiente_pago de más de 48 h.
   const orders = await listOrders();
   const twoDaysAgo = new Date(now - 2 * DAY).toISOString();
   for (const o of orders) {
-    if (o.paymentStatus === "pendiente_pago" && o.createdAt < twoDaysAgo) summary.ordersPending++;
+    if (o.paymentStatus !== "pendiente_pago") continue;
+    if (o.createdAt >= twoDaysAgo) {
+      // Reciente — solo contar.
+      summary.ordersPending++;
+    } else {
+      // Expirada (> 48 h) — cancelar.
+      await updateOrder(o.id, { paymentStatus: "fallida" });
+      summary.ordersCancelled++;
+    }
   }
 
   await logRun({
     agent: "cron",
     action: "daily",
-    summary: `recompra ${summary.recompra} · campañas finalizadas ${summary.campaignsFinalized} · follow-ups ${summary.followUps} · pagos pendientes ${summary.ordersPending}`,
+    summary: `recompra ${summary.recompra} · campañas finalizadas ${summary.campaignsFinalized} · follow-ups ${summary.followUps} · pagos pendientes ${summary.ordersPending} · órdenes canceladas ${summary.ordersCancelled}`,
     meta: { ...summary },
   });
   return summary;

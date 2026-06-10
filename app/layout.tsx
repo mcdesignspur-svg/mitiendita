@@ -20,9 +20,27 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Mi Tiendita PR — Productos virales importados | Al detal y al por mayor",
+  metadataBase: new URL("https://mitienditapr.com"),
+  title: {
+    default: "Mi Tiendita PR — Productos virales importados",
+    template: "%s — Mi Tiendita PR",
+  },
   description:
     "Productos importados de alta utilidad y virales para individuos, gasolineras, farmacias y mini-markets en Puerto Rico. Precios especiales para negocios con Registro de Comerciante.",
+  openGraph: {
+    siteName: "Mi Tiendita PR",
+    locale: "es_PR",
+    type: "website",
+    title: "Mi Tiendita PR — Productos virales importados",
+    description:
+      "Productos importados de alta utilidad y virales para individuos, gasolineras, farmacias y mini-markets en Puerto Rico.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Mi Tiendita PR — Productos virales importados",
+    description:
+      "Productos importados de alta utilidad y virales para individuos, gasolineras, farmacias y mini-markets en Puerto Rico.",
+  },
 };
 
 export const viewport: Viewport = {
@@ -41,6 +59,9 @@ export default async function RootLayout({
     ? { id: business.id, businessName: business.businessName, status: business.status }
     : null;
 
+  // Solo mostramos hints de demo fuera de producción
+  const showDemo = process.env.NODE_ENV !== "production";
+
   return (
     <html lang="es">
       <body className={`${display.variable} ${body.variable}`}>
@@ -48,7 +69,7 @@ export default async function RootLayout({
           <Header session={session} />
           <main>{children}</main>
           <Footer />
-          <ShopAssistant />
+          <ShopAssistant showDemo={showDemo} />
         </CartProvider>
       </body>
     </html>

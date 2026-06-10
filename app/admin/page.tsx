@@ -38,7 +38,11 @@ export default async function AdminPage() {
   const suppliers = await listSuppliers();
   const approvalsPendientes = await listApprovalTasks({ status: "pendiente" });
   const activeProducts = products.filter((p) => p.active !== false);
-  const gmv = orders.reduce((s, o) => s + o.total, 0);
+  // GMV solo incluye órdenes con pago confirmado (pagada) o factura emitida (factura_pendiente)
+  const PAID_STATUSES = new Set(["pagada", "factura_pendiente"]);
+  const gmv = orders
+    .filter((o) => o.paymentStatus && PAID_STATUSES.has(o.paymentStatus))
+    .reduce((s, o) => s + o.total, 0);
   const candidates = candidatesRaw
     .map((c) => ({ ...c, score: scoreFor(c) }))
     .sort((a, b) => b.score - a.score);
@@ -67,7 +71,8 @@ export default async function AdminPage() {
       )}
 
       {/* metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
+      {/* 7 métricas: 2 cols mobile → 4 tablet → 7 desktop (una por columna) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-12">
         <Metric value={String(approvalsPendientes.length)} label="Aprobaciones" accent="var(--color-coral-deep)" href="/admin/aprobaciones" />
         <Metric value={`${activeProducts.length}/${products.length}`} label="Productos activos" accent="var(--color-teal-deep)" href="/admin/productos" />
         <Metric value={String(grupos.length)} label="Grupos" accent="var(--color-teal)" href="/admin/grupos" />

@@ -152,10 +152,25 @@ async function searchAlibaba(query: string) {
     console.error(`⚠️  La API respondió con error: code=${raw.code} ${raw.message ?? ""}\n`);
   }
   // Imprime el JSON crudo para ver el esquema real y afinar el mapeo a candidatos.
-  console.log(JSON.stringify(raw, null, 2));
+  // M-18: redacta campos *token* antes de imprimir (access_token, refresh_token, etc.).
+  console.log(JSON.stringify(redactTokens(raw), null, 2));
   console.log(
     "\nℹ️  Respuesta cruda. Con este esquema afino el mapeo a SourcingCandidate y en la próxima corrida ingiero directo (createCandidate) con el sourceUrl real.",
   );
+}
+
+/**
+ * M-18: redacta cualquier campo cuyo nombre contenga "token" (access_token,
+ * refresh_token, etc.) en un objeto JSON antes de imprimirlo a consola.
+ */
+function redactTokens(obj: unknown): unknown {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(redactTokens);
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    result[k] = /token/i.test(k) && typeof v === "string" ? "[REDACTED]" : redactTokens(v);
+  }
+  return result;
 }
 
 async function main() {

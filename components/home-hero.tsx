@@ -86,9 +86,9 @@ export function HomeHero() {
         className="border-y-2 py-3 overflow-hidden"
         style={{ borderColor: "var(--color-ink)", background: "var(--color-ink)" }}
       >
-        <div className="marquee-track">
+        <div className="marquee-track" aria-hidden="true">
           {[0, 1].map((dup) => (
-            <div key={dup} className="flex shrink-0">
+            <div key={dup} className="flex shrink-0" aria-hidden={dup === 1 ? "true" : undefined}>
               {MARQUEE.map((w) => (
                 <span
                   key={dup + w}

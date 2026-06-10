@@ -1,8 +1,10 @@
 import type Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
-import { updateOrder } from "@/lib/db";
+import { getOrderById, updateOrder } from "@/lib/db";
 import { notifyOrderConfirmation } from "@/lib/notify";
+import { applyOrderInventory } from "@/lib/inventory";
+import { toCents } from "@/lib/money";
 
 export const runtime = "nodejs";
 
@@ -26,11 +28,30 @@ export async function POST(req: Request) {
     const session = event.data.object as Stripe.Checkout.Session;
     const orderId = session.metadata?.orderId;
     if (orderId && session.payment_status === "paid") {
-      const updated = await updateOrder(orderId, {
-        paymentStatus: "pagada",
-        status: "procesando",
-      });
-      if (updated) await notifyOrderConfirmation(updated).catch(() => {});
+      const order = await getOrderById(orderId);
+      if (order) {
+        // M-8: el monto cobrado por Stripe debe coincidir con el total recalculado
+        // de la orden. Si difiere (manipulación o desincronización), no marcamos
+        // pagada ni descontamos inventario; dejamos rastro para revisión.
+        const expected = toCents(order.total);
+        const paid = session.amount_total ?? 0;
+        if (paid !== expected) {
+          console.error(
+            `[stripe] monto no coincide para orden ${orderId}: cobrado ${paid}¢ vs esperado ${expected}¢`,
+          );
+        } else if (order.paymentStatus !== "pagada") {
+          // CR-3/A-8: el inventario se descuenta SOLO al confirmarse el pago.
+          // El guard `!== "pagada"` lo hace idempotente ante webhooks repetidos.
+          const updated = await updateOrder(orderId, {
+            paymentStatus: "pagada",
+            status: "procesando",
+          });
+          if (updated) {
+            await applyOrderInventory(updated).catch(() => {});
+            await notifyOrderConfirmation(updated).catch(() => {});
+          }
+        }
+      }
     }
   }
 

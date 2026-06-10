@@ -4,7 +4,17 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getStripe, stripeEnabled } from "./stripe";
-import { athEnabled } from "./athmovil";
+import {
+  priceCart,
+  priceCartForDisplay,
+  parseIntentLines,
+  isPricedError,
+  type CartIntentLine,
+  type PricedLine,
+} from "./pricing";
+import { toCents } from "./money";
+import { safeUrl, safeImageUrl } from "./url-safe";
+import { rateLimit } from "./rate-limit";
 import {
   createBusiness,
   createOrder,
@@ -67,7 +77,6 @@ import { GRADIENT_PRESETS } from "./products";
 import { notifyOrderConfirmation, notifyBusinessApproved } from "./notify";
 import type {
   BusinessType,
-  OrderItem,
   Product,
   Badge,
   Segment,
@@ -122,16 +131,29 @@ export async function registerBusinessAction(
     return { error: "Ya existe una cuenta con ese email. Intenta acceder." };
   }
 
-  const business = await createBusiness({
-    businessName,
-    type,
-    contactName,
-    email,
-    phone,
-    municipio,
-    registroComerciante,
-    passwordHash: hashPassword(password),
-  });
+  // M-9: la verificación de existencia es una primera barrera; el constraint
+  // UNIQUE (lo añade el Agente B) es la garantía real contra carreras. Si dos
+  // registros del mismo correo llegan a la vez, atrapamos la violación y
+  // devolvemos un mensaje claro en vez de un 500.
+  let business;
+  try {
+    business = await createBusiness({
+      businessName,
+      type,
+      contactName,
+      email,
+      phone,
+      municipio,
+      registroComerciante,
+      passwordHash: hashPassword(password),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (msg.includes("unique") || msg.includes("duplicate") || msg.includes("23505")) {
+      return { error: "Ese correo ya está registrado. Intenta acceder." };
+    }
+    return { error: "No se pudo crear la cuenta. Intenta de nuevo." };
+  }
 
   await setSession(business.id);
   redirect("/negocios/cuenta?bienvenida=1");
@@ -164,6 +186,18 @@ export async function adminLoginAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // A-1: rate-limit por IP para frenar fuerza bruta sobre el password de admin.
+  const h = await headers();
+  const ip =
+    (h.get("x-forwarded-for") || "").split(",")[0].trim() ||
+    h.get("x-real-ip") ||
+    "desconocido";
+  const limited = rateLimit(`admin-login:${ip}`, 5, 60_000);
+  if (!limited.ok) {
+    const secs = Math.ceil(limited.retryAfterMs / 1000);
+    return { error: `Demasiados intentos. Espera ${secs}s e intenta de nuevo.` };
+  }
+
   const password = String(formData.get("password") || "");
   if (!checkAdminPassword(password)) {
     return { error: "Contraseña de admin incorrecta." };
@@ -192,6 +226,45 @@ export async function rejectBusinessAction(formData: FormData): Promise<void> {
   revalidatePath("/admin");
 }
 
+// --- Carrito: repricing server-side para mostrar (CR-1) --------
+/**
+ * Recalcula el carrito server-side para que el cliente MUESTRE precios reales
+ * (retail con descuento, o mayorista si la sesión es un negocio verificado) sin
+ * confiar en nada del navegador. Es solo lectura (no muta). Devuelve las líneas
+ * con datos de presentación + totales; si algo no cuadra, `error` + las líneas
+ * que sí se pudieron resolver.
+ */
+export type PricedCartState = {
+  kind: "b2c" | "b2b";
+  wholesale: boolean;
+  lines: PricedLine[];
+  subtotal: number;
+  shipping: number;
+  total: number;
+  /** Mínimo de pedido mayorista en USD (0 para B2C). */
+  minOrder: number;
+  /** True si es pedido mayorista y aún no alcanza el mínimo. */
+  belowMin: boolean;
+  notice?: string;
+};
+
+export async function priceCartAction(
+  intent: CartIntentLine[],
+): Promise<PricedCartState> {
+  const priced = await priceCartForDisplay(parseIntentLines(intent));
+  return {
+    kind: priced.kind,
+    wholesale: priced.wholesale,
+    lines: priced.lines,
+    subtotal: priced.subtotal,
+    shipping: priced.shipping,
+    total: priced.total,
+    minOrder: priced.minOrder,
+    belowMin: priced.belowMin,
+    notice: priced.notice,
+  };
+}
+
 // --- Checkout --------------------------------------------------
 export async function checkoutAction(
   _prev: FormState,
@@ -199,63 +272,31 @@ export async function checkoutAction(
 ): Promise<FormState> {
   const customerName = String(formData.get("customerName") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  const kind = (String(formData.get("kind") || "b2c") === "b2b" ? "b2b" : "b2c") as
-    | "b2c"
-    | "b2b";
-  const businessId = String(formData.get("businessId") || "") || undefined;
+  if (!customerName || !email) return { error: "Falta tu nombre o email." };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Email inválido." };
 
-  let items: OrderItem[] = [];
+  // CR-1: el cliente solo manda intención [{productId, qty}]. Todo precio,
+  // nombre, envío, kind y businessId se derivan server-side desde la DB + la
+  // sesión. Ignoramos cualquier unitPrice/name/shipping/kind del FormData.
+  let intentRaw: unknown = [];
   try {
-    items = JSON.parse(String(formData.get("items") || "[]"));
+    intentRaw = JSON.parse(String(formData.get("items") || "[]"));
   } catch {
     return { error: "Carrito inválido." };
   }
+  const priced = await priceCart(parseIntentLines(intentRaw));
+  if (isPricedError(priced)) return { error: priced.error };
 
-  if (!customerName || !email) return { error: "Falta tu nombre o email." };
-  if (!items.length) return { error: "Tu carrito está vacío." };
+  const { kind, businessId, items, shipping, total } = priced;
 
-  const shipping = Math.max(0, Number(formData.get("shipping")) || 0);
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const total = subtotal + shipping;
+  // Cash-first: B2B paga AHORA igual que B2C (tarjeta vía Stripe, o ATH Móvil
+  // por su propia ruta). Ya no se emite factura/crédito automático — el crédito
+  // se gana después con historial de compra (ver ESTRATEGIA-B2B.md, Fase 4).
+  // El pedido conserva `kind`/`businessId` para reportería B2B. El mínimo de
+  // pedido mayorista ya lo validó priceCart (rechaza si subtotal < mínimo).
 
-  // --- B2B: queda como factura (net 15/30), sin cobro con tarjeta ---
-  if (kind === "b2b") {
-    const order = await createOrder({
-      kind,
-      businessId,
-      customerName,
-      email,
-      items,
-      shipping,
-      total,
-      paymentStatus: "factura_pendiente",
-      paymentMethod: "factura",
-    });
-    await applyOrderInventory(order).catch(() => {});
-    await notifyOrderConfirmation(order).catch(() => {});
-    redirect(`/carrito/gracias?o=${order.id}`);
-  }
-
-  const method = String(formData.get("method") || "");
-
-  // --- B2C con ATH Móvil: crea la orden y manda a la página del botón ---
-  if (method === "ath" && athEnabled()) {
-    const order = await createOrder({
-      kind,
-      businessId,
-      customerName,
-      email,
-      items,
-      shipping,
-      total,
-      paymentStatus: "pendiente_pago",
-      paymentMethod: "ath_movil",
-    });
-    await applyOrderInventory(order).catch(() => {});
-    redirect(`/carrito/ath?o=${order.id}`);
-  }
-
-  // --- B2C con Stripe: cobro real con tarjeta ---
+  // --- Stripe: cobro real con tarjeta. El inventario NO se descuenta
+  // aquí; se descuenta cuando el webhook de Stripe confirma `paid` (CR-3/A-8). ---
   if (stripeEnabled()) {
     const order = await createOrder({
       kind,
@@ -268,7 +309,6 @@ export async function checkoutAction(
       paymentStatus: "pendiente_pago",
       paymentMethod: "stripe",
     });
-    await applyOrderInventory(order).catch(() => {});
 
     const h = await headers();
     const host = h.get("host") || "localhost:3000";
@@ -284,7 +324,7 @@ export async function checkoutAction(
           price_data: {
             currency: "usd",
             product_data: { name: it.name },
-            unit_amount: Math.round(it.unitPrice * 100),
+            unit_amount: toCents(it.unitPrice),
           },
           quantity: it.qty,
         })),
@@ -294,7 +334,7 @@ export async function checkoutAction(
                 {
                   shipping_rate_data: {
                     type: "fixed_amount",
-                    fixed_amount: { amount: Math.round(shipping * 100), currency: "usd" },
+                    fixed_amount: { amount: toCents(shipping), currency: "usd" },
                     display_name: "Envío",
                   },
                 },
@@ -313,7 +353,8 @@ export async function checkoutAction(
     redirect(url);
   }
 
-  // --- Fallback sin Stripe (demo): registra la orden y muestra confirmación ---
+  // --- Fallback sin Stripe (demo): registra la orden y muestra confirmación.
+  // Sin pasarela real no hay confirmación de pago, así que descontamos aquí. ---
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
   await applyOrderInventory(order).catch(() => {});
   await notifyOrderConfirmation(order).catch(() => {});
@@ -364,18 +405,26 @@ function parseProductForm(fd: FormData): {
     .map((t) => t.trim().toLowerCase())
     .filter(Boolean);
 
-  // Galería de fotos: viene como JSON en un campo oculto. La primera es la portada.
+  // Galería de fotos: viene como JSON en un campo oculto. La primera es la
+  // portada. A-3: cada URL pasa por safeImageUrl (descarta esquemas peligrosos
+  // y hosts no permitidos); las inválidas se descartan en silencio.
   let imageUrls: string[] = [];
   try {
     const parsed = JSON.parse(String(fd.get("imageUrls") || "[]"));
     if (Array.isArray(parsed)) {
-      imageUrls = parsed.filter((u): u is string => typeof u === "string" && !!u.trim());
+      imageUrls = parsed
+        .map((u) => safeImageUrl(u))
+        .filter((u): u is string => typeof u === "string");
     }
   } catch {
     imageUrls = [];
   }
-  const cover = imageUrls[0] || String(fd.get("imageUrl") || "").trim() || undefined;
+  const coverRaw = safeImageUrl(fd.get("imageUrl"));
+  const cover = imageUrls[0] || coverRaw || undefined;
   if (cover && !imageUrls.includes(cover)) imageUrls = [cover, ...imageUrls];
+
+  // A-3: sourceUrl (enlace al proveedor) se valida con safeUrl; inválida → "".
+  const sourceUrl = safeUrl(fd.get("sourceUrl")) || "";
 
   const value: Omit<Product, "id" | "slug"> & { slug?: string } = {
     name,
@@ -396,7 +445,7 @@ function parseProductForm(fd: FormData): {
     tags,
     segments,
     landedCost: Math.max(0, num("landedCost")),
-    sourceUrl: String(fd.get("sourceUrl") || "").trim(),
+    sourceUrl,
     stock: Math.max(0, Math.round(num("stock"))),
     discountPercent: Math.min(90, Math.max(0, num("discountPercent"))),
     shippingPrice: Math.max(0, num("shippingPrice")),
@@ -695,6 +744,9 @@ export async function approveTaskAction(fd: FormData): Promise<void> {
   if (!(await isAdmin())) return;
   const tid = String(fd.get("tid") || "");
   const note = String(fd.get("note") || "").trim() || undefined;
+  // M-1: compare-and-set para evitar doble dispatch. Re-leemos el estado justo
+  // antes de transicionar y volvemos a verificar tras la escritura: solo
+  // despachamos el efecto si esta corrida fue la que cruzó pendiente→aprobada.
   const task = await getApprovalTaskById(tid);
   if (!task || task.status !== "pendiente") return;
   const updated = await updateApprovalTask(tid, {
@@ -702,7 +754,9 @@ export async function approveTaskAction(fd: FormData): Promise<void> {
     decidedAt: new Date().toISOString(),
     decisionNote: note,
   });
-  if (updated) {
+  // Re-confirmar que seguimos en una transición consistente (no ejecutada ya).
+  const confirmed = await getApprovalTaskById(tid);
+  if (updated && confirmed && confirmed.status === "aprobada" && !confirmed.executedAt) {
     const res = await dispatchApproval(updated);
     await logRun({
       agent: "app",
@@ -764,7 +818,13 @@ export async function setPurchaseOrderStatusAction(fd: FormData): Promise<void> 
   const poId = String(fd.get("poId") || "");
   const status = String(fd.get("status") || "borrador") as PurchaseOrderStatus;
   // Recibir sube el inventario del producto enlazado (saldo = suma de movimientos).
+  // M-1: no re-recibir una OC ya recibida (evita doble entrada de inventario).
   if (status === "recibida") {
+    const existing = await getPurchaseOrderById(poId);
+    if (existing && existing.status === "recibida") {
+      revalidatePath("/admin/compras");
+      return;
+    }
     await receivePurchaseOrder(poId, "app");
   } else {
     await updatePurchaseOrder(poId, { status });

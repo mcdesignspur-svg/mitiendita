@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, ne, desc } from "drizzle-orm";
+import { eq, ne, desc, sql } from "drizzle-orm";
 import { getDb } from "./drizzle";
 import { products, grupos, businesses, orders, sourcingCandidates, suppliers, approvalTasks, agentRuns, quotes, purchaseOrders, shipments, inventoryMovements, campaigns } from "./schema";
 import { slugify } from "./products";
@@ -110,6 +110,7 @@ function toOrder(r: OrderRow): Order {
     paymentMethod: (r.paymentMethod as Order["paymentMethod"]) ?? undefined,
     stripeSessionId: r.stripeSessionId ?? undefined,
     paymentRef: r.paymentRef ?? undefined,
+    athEcommerceId: r.athEcommerceId ?? undefined,
     createdAt: r.createdAt,
   };
 }
@@ -139,6 +140,9 @@ export async function createBusiness(
 ): Promise<Business> {
   const business: Business = {
     ...input,
+    // Normaliza el email a minúsculas (paridad con getBusinessByEmail, que ya
+    // busca con email.toLowerCase(), y con el adaptador de archivo).
+    email: input.email.toLowerCase(),
     id: newId("b"),
     status: "pending",
     createdAt: new Date().toISOString(),
@@ -233,6 +237,9 @@ export async function updateProduct(
   if (patch.slug) {
     const others = await db.select({ slug: products.slug }).from(products).where(ne(products.id, pid));
     set.slug = uniqueSlug(others.map((r) => r.slug), slugify(patch.slug));
+  } else {
+    // slug "" / undefined no debe sobrescribir el slug existente con vacío.
+    delete set.slug;
   }
   const rows = await db.update(products).set(set).where(eq(products.id, pid)).returning();
   return rows[0] ? toProduct(rows[0]) : undefined;
@@ -241,6 +248,43 @@ export async function updateProduct(
 export async function deleteProduct(pid: string): Promise<boolean> {
   const rows = await getDb().delete(products).where(eq(products.id, pid)).returning({ id: products.id });
   return rows.length > 0;
+}
+
+/**
+ * Ajuste ATÓMICO de stock (A-7). Un solo statement (CTE + UPDATE...RETURNING)
+ * aplica el delta con piso en 0 directamente en la DB, evitando el race del
+ * read-modify-write. La CTE `prev` captura el stock PREVIO antes del UPDATE en
+ * el mismo statement, así que `applied = stock_nuevo − stock_previo` es exacto
+ * aun cuando el delta negativo cae por debajo de 0 (clamp), y consistente bajo
+ * concurrencia (neon-http ejecuta el statement atómicamente).
+ *
+ * Devuelve el Product resultante y el delta REALMENTE aplicado, para que
+ * lib/inventory.ts registre el movimiento con ese valor y se preserve el
+ * invariante `stock === Σ movimientos`. `null` si el producto no existe.
+ */
+export async function adjustProductStock(
+  pid: string,
+  delta: number,
+): Promise<{ product: Product; applied: number } | null> {
+  const res = await getDb().execute(sql`
+    WITH prev AS (SELECT stock AS s FROM products WHERE id = ${pid})
+    UPDATE products
+       SET stock = GREATEST(0, products.stock + ${delta})
+     WHERE id = ${pid}
+    RETURNING products.stock AS new_stock, (SELECT s FROM prev) AS prev_stock
+  `);
+  const rows = (res as unknown as { rows?: Array<Record<string, unknown>> }).rows ??
+    (res as unknown as Array<Record<string, unknown>>);
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  if (!row) return null;
+  const newStock = Number(row.new_stock);
+  const prevStock = Number(row.prev_stock);
+  const applied = newStock - prevStock;
+  // El stock ya quedó persistido por el UPDATE atómico; releemos el Product
+  // completo para mapear todos sus campos (el RETURNING solo trae el stock).
+  const product = await getProductById(pid);
+  if (!product) return null;
+  return { product, applied };
 }
 
 export async function relatedProducts(slug: string, n = 3): Promise<Product[]> {

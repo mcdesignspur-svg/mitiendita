@@ -12,6 +12,19 @@
 import * as file from "./db-file";
 import * as pg from "./db-postgres";
 
+/**
+ * Aserción estructural de PARIDAD entre los dos adaptadores (sin coste runtime).
+ * Cada uno debe ser asignable al otro: si una firma deriva (función nueva en
+ * uno y no en el otro, o tipos distintos), el build ROMPE aquí en vez de fallar
+ * sutilmente en runtime con el adaptador equivocado.
+ */
+type _FileMatchesPg = typeof file extends typeof pg ? true : never;
+type _PgMatchesFile = typeof pg extends typeof file ? true : never;
+const _parityFilePg: _FileMatchesPg = true;
+const _parityPgFile: _PgMatchesFile = true;
+void _parityFilePg;
+void _parityPgFile;
+
 function impl() {
   return process.env.DATABASE_URL ? pg : file;
 }
@@ -47,6 +60,7 @@ export const getProductById = bind("getProductById");
 export const createProduct = bind("createProduct");
 export const updateProduct = bind("updateProduct");
 export const deleteProduct = bind("deleteProduct");
+export const adjustProductStock = bind("adjustProductStock");
 export const relatedProducts = bind("relatedProducts");
 export const listCategories = bind("listCategories");
 

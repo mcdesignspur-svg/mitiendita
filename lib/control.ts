@@ -20,6 +20,7 @@ import {
   updateCampaign,
   listApprovalTasks,
   listCandidates,
+  listInventoryMovements,
   listQuotes,
   listSuppliers,
   updateCandidate,
@@ -28,13 +29,9 @@ import {
   updateSupplier,
 } from "./db";
 import { adjustStock } from "./inventory";
+import { money2 } from "./money";
 import { SURTIDO_RULE } from "./ai";
 import type { AgentName, AgentRun, ApprovalKind, ApprovalTask, PurchaseOrder } from "./types";
-
-/** Redondea a 2 decimales (dinero). */
-function money2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 /** Kinds que ejecuta Hermes en Alibaba (aparecen en su cola del brief). */
 const HERMES_KINDS = new Set<ApprovalKind>(["outreach"]);
@@ -145,6 +142,19 @@ export async function dispatchApproval(task: ApprovalTask): Promise<DispatchResu
       const productId = (p.productId as string | undefined) ?? task.relatedId;
       const qty = Math.max(1, Math.round(Number(p.qty) || 100));
       const unitCost = Number(p.unitCost) || 0;
+
+      // M-1: evita crear una segunda OC si la tarea ya tiene una asociada.
+      const existingPoId = p.purchaseOrderId as string | undefined;
+      if (existingPoId) {
+        const existing = await getPurchaseOrderById(existingPoId);
+        if (existing && existing.status !== "cancelada") {
+          return {
+            ok: true,
+            message: `Recompra ya tiene OC asociada (${existingPoId}), no se crea duplicado.`,
+          };
+        }
+      }
+
       const po = await createPurchaseOrder({
         supplierId: p.supplierId as string | undefined,
         supplierName: (p.supplierName as string) || "Suplidor por definir",
@@ -234,7 +244,10 @@ export async function draftPurchaseOrder(input: {
 
 /**
  * Recibe una orden de compra: la marca `recibida` y sube el inventario del
- * producto enlazado (si lo hay). Idempotente.
+ * producto enlazado (si lo hay).
+ *
+ * M-1 idempotencia: verifica si ya existe un InventoryMovement con reason
+ * "recibo" referenciando esta OC antes de sumar de nuevo.
  */
 export async function receivePurchaseOrder(
   poId: string,
@@ -243,6 +256,22 @@ export async function receivePurchaseOrder(
   const po = await getPurchaseOrderById(poId);
   if (!po) return { ok: false, message: "Orden de compra no encontrada." };
   if (po.status === "recibida") return { ok: true, message: "La orden ya estaba recibida." };
+
+  // M-1: antes de ajustar inventario, verifica que no haya un movimiento previo
+  // con reason "recibo" apuntando a esta OC (doble-recibo por re-despacho).
+  if (po.productId) {
+    const movements = await listInventoryMovements({ productId: po.productId });
+    const alreadyApplied = movements.some(
+      (m) => m.reason === "recibo" && m.ref === po.id,
+    );
+    if (alreadyApplied) {
+      // La PO puede no estar marcada como recibida si falló la mitad del flujo —
+      // corregimos el estado sin duplicar el stock.
+      await updatePurchaseOrder(poId, { status: "recibida" });
+      return { ok: true, message: "Inventario ya aplicado (movimiento previo encontrado). PO marcada recibida." };
+    }
+  }
+
   await updatePurchaseOrder(poId, { status: "recibida" });
   if (po.productId) {
     await adjustStock({
@@ -306,6 +335,9 @@ const GATES = [
   "Calíbrate con `recentDecisions`: no traigas más de lo que Miguel rechazó.",
 ];
 
+/** Máximo de candidatos/suplidores a incluir en el estado del brief (M-19). */
+const BRIEF_STATE_LIMIT = 100;
+
 export async function buildBrief(agent: AgentName = "hermes"): Promise<OperatorBrief> {
   const [candidates, suppliers, tasks, quotes] = await Promise.all([
     listCandidates(),
@@ -332,14 +364,22 @@ export async function buildBrief(agent: AgentName = "hermes"): Promise<OperatorB
     suplidores: suppliers.length,
   };
 
+  // M-19: capa a 100 los más recientes para que el objeto HTTP no crezca sin límite.
+  const candidatesKnown = candidates
+    .slice(-BRIEF_STATE_LIMIT)
+    .map((c) => ({ name: c.name, stage: c.stage, sourceUrl: c.sourceUrl }));
+  const suppliersKnown = suppliers
+    .slice(-BRIEF_STATE_LIMIT)
+    .map((s) => ({ name: s.name, status: s.status }));
+
   const base: Omit<OperatorBrief, "briefing"> = {
     generatedAt: new Date().toISOString(),
     agent,
     rules: { identity: IDENTITY, surtido: SURTIDO_RULE, gates: GATES },
     parameters: SOURCING_PARAMETERS,
     state: {
-      candidatesKnown: candidates.map((c) => ({ name: c.name, stage: c.stage, sourceUrl: c.sourceUrl })),
-      suppliersKnown: suppliers.map((s) => ({ name: s.name, status: s.status })),
+      candidatesKnown,
+      suppliersKnown,
       quotesRecent: quotes.slice(0, 15).map((q) => ({ productName: q.productName, supplierName: q.supplierName, unitCost: q.unitCost })),
       counts,
     },
@@ -400,7 +440,7 @@ function renderBriefing(
   if (b.recentDecisions.length) {
     lines.push("## Decisiones recientes (calíbrate)");
     for (const d of b.recentDecisions) {
-      lines.push(`- ${d.status.toUpperCase()} · ${d.title}${d.note ? ` — “${d.note}”` : ""}`);
+      lines.push(`- ${d.status.toUpperCase()} · ${d.title}${d.note ? ` — "${d.note}"` : ""}`);
     }
   }
   return lines.join("\n");

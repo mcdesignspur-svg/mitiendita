@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { Product } from "@/lib/types";
+import type { PublicProduct } from "@/lib/public-product";
 import { ProductCard } from "./product-card";
 
 export function Catalog({
@@ -10,17 +11,22 @@ export function Catalog({
   wholesale,
   initialCategory = "Todos",
 }: {
-  products: Product[];
+  products: PublicProduct[];
   wholesale: boolean;
   initialCategory?: string;
 }) {
-  const [cat, setCat] = useState(initialCategory);
-  const [q, setQ] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // URL es la fuente de verdad — elimina la copia prop→useState (A-16)
+  const cat = searchParams.get("cat") ?? initialCategory;
 
   const categories = useMemo(
     () => ["Todos", ...Array.from(new Set(products.map((p) => p.category)))],
     [products],
   );
+
+  const q = searchParams.get("q") ?? "";
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -34,6 +40,16 @@ export function Catalog({
       return okCat && okQ;
     });
   }, [products, cat, q]);
+
+  function setParam(key: string, value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value && value !== "Todos" && value !== "") {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <div>
@@ -63,7 +79,8 @@ export function Catalog({
               key={c}
               className="chip"
               data-active={cat === c}
-              onClick={() => setCat(c)}
+              onClick={() => setParam("cat", c)}
+              aria-pressed={cat === c}
             >
               {c}
             </button>
@@ -74,14 +91,15 @@ export function Catalog({
             className="field md:w-64"
             placeholder="Buscar producto…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => setParam("q", e.target.value)}
+            aria-label="Buscar producto"
           />
         </div>
       </div>
 
       {filtered.length === 0 ? (
         <p className="py-16 text-center" style={{ color: "var(--color-muted)" }}>
-          No encontramos productos para “{q}”.
+          No encontramos productos para &ldquo;{q}&rdquo;.
         </p>
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

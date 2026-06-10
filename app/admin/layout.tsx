@@ -8,7 +8,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  if (!(await isAdmin())) return <AdminLogin />;
+  const showDemo = process.env.NODE_ENV !== "production";
+  if (!(await isAdmin())) return <AdminLogin showDemo={showDemo} />;
 
   return (
     <div>

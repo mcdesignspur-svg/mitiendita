@@ -38,3 +38,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# documentos/datos internos — NO publicar en el repo público
+# (proveedores/márgenes, estrategia de uso interno, mapa de vulnerabilidades)
+/hallazgos*.json
+/RESEARCH-DISTRIBUCION.md
+/AUDITORIA.md
+/ESTRATEGIA-B2B.md

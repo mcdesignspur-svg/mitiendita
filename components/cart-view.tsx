@@ -1,30 +1,70 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useCart } from "./cart-context";
 import { AthButton, type AthOrder } from "./ath-button";
 import { money } from "@/lib/format";
-import { checkoutAction, type FormState } from "@/lib/actions";
+import {
+  checkoutAction,
+  priceCartAction,
+  type FormState,
+  type PricedCartState,
+} from "@/lib/actions";
 
 const ATHM_PUB = process.env.NEXT_PUBLIC_ATHM_PUBLIC_TOKEN || "";
 const ATHM_PHONE = process.env.NEXT_PUBLIC_ATHM_PHONE || "";
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+const EMPTY_PRICED: PricedCartState = {
+  kind: "b2c",
+  wholesale: false,
+  lines: [],
+  subtotal: 0,
+  shipping: 0,
+  total: 0,
+  minOrder: 0,
+  belowMin: false,
+};
+
 export function CartView({
   kind,
-  businessId,
   businessName,
 }: {
+  // `kind`/`businessName` vienen del server (la sesión). El precio real, los
+  // totales y el kind efectivo los recalcula el server (priceCartAction); estos
+  // props solo afinan los textos antes de que llegue el primer repricing.
   kind: "b2c" | "b2b";
   businessId?: string;
   businessName?: string;
 }) {
-  const { lines, subtotal, setQty, remove } = useCart();
+  const { lines, setQty, remove } = useCart();
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     checkoutAction,
     {},
   );
+
+  // CR-1: el carrito solo guarda {productId, qty}. Pedimos al server que lo
+  // repricie (precios reales, descuentos, mayorista) para MOSTRARLO.
+  const [priced, setPriced] = useState<PricedCartState>(EMPTY_PRICED);
+  const [, startPricing] = useTransition();
+  const intentSig = JSON.stringify(lines);
+  useEffect(() => {
+    let cancelled = false;
+    if (lines.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPriced(EMPTY_PRICED);
+      return;
+    }
+    startPricing(async () => {
+      const res = await priceCartAction(lines);
+      if (!cancelled) setPriced(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentSig]);
 
   const [customerName, setCustomerName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,22 +73,24 @@ export function CartView({
   const [athError, setAthError] = useState<string | null>(null);
   const lastSig = useRef("");
 
-  const items = lines.map((l) => ({
-    productId: l.productId,
-    name: l.name,
-    qty: l.qty,
-    unitPrice: l.unitPrice,
-  }));
-  const shipping = lines.reduce((m, l) => Math.max(m, l.shippingPrice || 0), 0);
-  const total = subtotal + shipping;
-  const athAvailable = kind === "b2c" && total > 0 && total <= 1500 && !!ATHM_PUB;
+  // Líneas a enviar al server (solo intención). El server las repricia.
+  const intent = lines.map((l) => ({ productId: l.productId, qty: l.qty }));
+  const effectiveKind = priced.wholesale ? "b2b" : kind;
+  const subtotal = priced.subtotal;
+  const shipping = priced.shipping;
+  const total = priced.total;
+  // Cash-first: ATH Móvil sirve B2C y B2B (≤ $1,500, el tope de ATH). Pedidos
+  // mayorista mayores se pagan con tarjeta (Stripe).
+  const athAvailable = total > 0 && total <= 1500 && !!ATHM_PUB;
+  const belowMin = priced.belowMin;
   const contactReady = customerName.trim().length > 1 && EMAIL_RE.test(email);
 
-  // Cuando hay nombre + email válidos, crea la orden y el botón oficial de ATH
-  // Móvil aparece solo (sin clic intermedio). Se re-crea si cambia el carrito.
-  const sig = JSON.stringify({ n: customerName.trim(), e: email.trim(), items, shipping });
+  // Cuando hay nombre + email válidos, prepara la orden ATH y el botón aparece
+  // solo. El server recalcula precio/total; aquí solo mandamos {productId, qty}.
+  const sig = JSON.stringify({ n: customerName.trim(), e: email.trim(), intent });
   useEffect(() => {
-    if (!athAvailable || !contactReady) {
+    if (!athAvailable || !contactReady || belowMin) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAthOrder(null);
       lastSig.current = "";
       return;
@@ -62,7 +104,7 @@ export function CartView({
         const res = await fetch("/api/ath/create", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ customerName, email, items, shipping }),
+          body: JSON.stringify({ customerName, email, items: intent }),
         });
         const data = await res.json();
         if (!res.ok || !data.order) throw new Error(data.error || "No se pudo preparar ATH Móvil.");
@@ -76,7 +118,7 @@ export function CartView({
     }, 600);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, contactReady, athAvailable]);
+  }, [sig, contactReady, athAvailable, belowMin]);
 
   if (lines.length === 0) {
     return (
@@ -93,53 +135,69 @@ export function CartView({
     );
   }
 
+  // Mapa de presentación id→línea repreciada (server). Si aún no llegó, usamos
+  // un placeholder neutral para no mostrar precios del cliente.
+  const priceById = new Map(priced.lines.map((l) => [l.productId, l]));
+
   return (
     <div className="grid lg:grid-cols-[1.6fr_1fr] gap-8 items-start">
       {/* lines */}
       <div className="space-y-3">
-        {lines.map((l) => (
-          <div key={l.productId} className="card p-3 sm:p-4 flex flex-wrap items-center gap-3 sm:gap-4">
-            <Link
-              href={`/productos/${l.slug}`}
-              className="grid place-items-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl text-3xl shrink-0"
-              style={{ background: "var(--color-cream-2)", border: "1.5px solid var(--color-line)" }}
-            >
-              {l.emoji}
-            </Link>
-            <div className="flex-1 min-w-0">
-              <Link href={`/productos/${l.slug}`} className="font-semibold hover:underline block truncate">
-                {l.name}
+        {lines.map((l) => {
+          const p = priceById.get(l.productId);
+          const name = p?.name ?? "Producto";
+          const emoji = p?.emoji ?? "📦";
+          const slug = p?.slug ?? "";
+          const unitPrice = p?.unitPrice ?? 0;
+          return (
+            <div key={l.productId} className="card p-3 sm:p-4 flex flex-wrap items-center gap-3 sm:gap-4">
+              <Link
+                href={slug ? `/productos/${slug}` : "/productos"}
+                className="grid place-items-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl text-3xl shrink-0"
+                style={{ background: "var(--color-cream-2)", border: "1.5px solid var(--color-line)" }}
+              >
+                {emoji}
               </Link>
-              <span className="text-sm" style={{ color: "var(--color-muted)" }}>
-                {money(l.unitPrice)} c/u
-              </span>
-            </div>
-            {/* Controles: en móvil bajan a una segunda línea a ancho completo */}
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              <div className="flex items-center rounded-full overflow-hidden shrink-0" style={{ border: "2px solid var(--color-ink)" }}>
-                <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty - 1)} aria-label="Menos">−</button>
-                <span className="px-3 font-bold tabular-nums">{l.qty}</span>
-                <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty + 1)} aria-label="Más">+</button>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-display text-lg text-right tabular-nums sm:w-20 shrink-0">
-                  {money(l.qty * l.unitPrice)}
+              <div className="flex-1 min-w-0">
+                <Link href={slug ? `/productos/${slug}` : "/productos"} className="font-semibold hover:underline block truncate">
+                  {name}
+                </Link>
+                <span className="text-sm" style={{ color: "var(--color-muted)" }}>
+                  {money(unitPrice)} c/u
                 </span>
-                <button onClick={() => remove(l.productId)} className="text-xl shrink-0 p-1" aria-label="Eliminar" style={{ color: "var(--color-muted)" }}>
-                  ✕
-                </button>
+              </div>
+              {/* Controles: en móvil bajan a una segunda línea a ancho completo */}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="flex items-center rounded-full overflow-hidden shrink-0" style={{ border: "2px solid var(--color-ink)" }}>
+                  <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty - 1)} aria-label="Menos">−</button>
+                  <span className="px-3 font-bold tabular-nums">{l.qty}</span>
+                  <button className="px-3 py-2 font-bold" onClick={() => setQty(l.productId, l.qty + 1)} aria-label="Más">+</button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-display text-lg text-right tabular-nums sm:w-20 shrink-0">
+                    {money(l.qty * unitPrice)}
+                  </span>
+                  <button onClick={() => remove(l.productId)} className="text-xl shrink-0 p-1" aria-label="Eliminar" style={{ color: "var(--color-muted)" }}>
+                    ✕
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* checkout */}
       <div className="card p-6 lg:sticky lg:top-24">
         <h2 className="font-display text-2xl mb-1">Resumen</h2>
-        {kind === "b2b" && (
+        {effectiveKind === "b2b" && (
           <p className="text-xs font-semibold mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: "#e7f7f3", color: "var(--color-teal-deep)" }}>
             ✅ Pedido mayorista · {businessName}
+          </p>
+        )}
+        {priced.notice && (
+          <p className="text-sm mb-3 font-semibold" style={{ color: "#a06b00" }}>
+            {priced.notice}
           </p>
         )}
         <div className="flex justify-between py-3 border-b" style={{ borderColor: "var(--color-line)" }}>
@@ -175,15 +233,12 @@ export function CartView({
           required
         />
 
-        {/* Tarjeta / factura (Stripe) */}
+        {/* Tarjeta / factura (Stripe). Solo mandamos intención: el server reprecia
+            y deriva kind/businessId/precio desde la sesión (CR-1). */}
         <form action={formAction}>
-          <input type="hidden" name="items" value={JSON.stringify(items)} />
-          <input type="hidden" name="kind" value={kind} />
-          <input type="hidden" name="shipping" value={shipping} />
-          <input type="hidden" name="method" value="stripe" />
+          <input type="hidden" name="items" value={JSON.stringify(intent)} />
           <input type="hidden" name="customerName" value={customerName} />
           <input type="hidden" name="email" value={email} />
-          {businessId && <input type="hidden" name="businessId" value={businessId} />}
 
           {state.error && (
             <p className="text-sm mb-3 font-semibold" style={{ color: "var(--color-coral-deep)" }}>
@@ -191,17 +246,19 @@ export function CartView({
             </p>
           )}
 
-          <button type="submit" disabled={pending} className="btn btn-primary w-full">
+          <button type="submit" disabled={pending || belowMin || total <= 0} className="btn btn-primary w-full">
             {pending
               ? "Procesando…"
-              : kind === "b2b"
-                ? "Confirmar pedido (factura) →"
-                : "Pagar con tarjeta →"}
+              : belowMin
+                ? "Agrega más para el mínimo mayorista"
+                : effectiveKind === "b2b"
+                  ? "Pagar pedido mayorista →"
+                  : "Pagar con tarjeta →"}
           </button>
         </form>
 
-        {/* ATH Móvil (B2C) — el botón oficial aparece solo al tener nombre+email */}
-        {athAvailable && (
+        {/* ATH Móvil — el botón oficial aparece solo al tener nombre+email */}
+        {athAvailable && !belowMin && (
           <div className="mt-3">
             {athOrder ? (
               <AthButton key={athOrder.id} order={athOrder} publicToken={ATHM_PUB} phone={ATHM_PHONE} />
@@ -223,8 +280,8 @@ export function CartView({
         )}
 
         <p className="text-xs mt-3 text-center" style={{ color: "var(--color-muted)" }}>
-          {kind === "b2b"
-            ? "Pedido mayorista: te enviamos la factura con términos (net 15/30)."
+          {effectiveKind === "b2b"
+            ? "Pedido mayorista: paga ahora con tarjeta o ATH Móvil. Sin mínimos por producto."
             : athAvailable
               ? "Pago seguro: tarjeta y Apple/Google Pay (Stripe), o ATH Móvil."
               : "Pago seguro con Stripe. Aceptamos tarjeta, Apple Pay y Google Pay."}

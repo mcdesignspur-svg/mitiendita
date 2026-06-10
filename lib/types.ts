@@ -105,12 +105,14 @@ export interface Order {
   /** Total = subtotal de items + envío. */
   total: number;
   status: "nuevo" | "procesando" | "enviado";
-  /** Estado de pago. B2C paga con tarjeta (Stripe); B2B queda como factura. */
+  /** Estado de pago. Cash-first: B2C y B2B pagan ahora (tarjeta/ATH). `factura_pendiente` queda reservado para crédito ganado (ESTRATEGIA-B2B.md, Fase 4). */
   paymentStatus?: "pendiente_pago" | "pagada" | "factura_pendiente" | "fallida";
-  /** Método: tarjeta (Stripe), ATH Móvil, o factura (B2B net 15/30). */
+  /** Método: tarjeta (Stripe), ATH Móvil, o factura (solo crédito ganado, Fase 4). */
   paymentMethod?: "stripe" | "ath_movil" | "factura";
   /** Id de la sesión de Stripe Checkout (para reconciliar el pago). */
   stripeSessionId?: string;
+  /** Id de la transacción ATH Móvil (ecommerceId) para verificar server-to-server. */
+  athEcommerceId?: string;
   /** Referencia del pago (Stripe session / referencia ATH Móvil). */
   paymentRef?: string;
   createdAt: string;

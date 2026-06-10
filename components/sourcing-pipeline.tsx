@@ -8,6 +8,7 @@ import {
   deleteCandidateAction,
   promoteCandidateAction,
 } from "@/lib/actions";
+import { safeUrl } from "@/lib/url-safe";
 import type { SourcingCandidate } from "@/lib/types";
 
 type Candidate = SourcingCandidate & { score: number };
@@ -29,6 +30,7 @@ export function SourcingPipeline({ candidates }: { candidates: Candidate[] }) {
   // Restaura la preferencia guardada (evita hydration mismatch leyendo en effect).
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved === "cards" || saved === "list") setView(saved);
   }, []);
 
@@ -205,9 +207,9 @@ function CandidateCard({ c }: { c: Candidate }) {
       <p className="text-xs mt-3 font-semibold" style={{ color: "var(--color-teal-deep)" }}>
         📈 {c.signal}
       </p>
-      {c.sourceUrl ? (
+      {safeUrl(c.sourceUrl) ? (
         <a
-          href={c.sourceUrl}
+          href={safeUrl(c.sourceUrl)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs font-semibold inline-flex items-center gap-1 mt-2 hover:underline"
@@ -250,8 +252,8 @@ function CandidateRow({ c }: { c: Candidate }) {
         <p className="text-xs truncate" style={{ color: "var(--color-muted)" }}>
           {c.supplier || "sin suplidor"} · <span style={{ color: "var(--color-teal-deep)" }}>📈 {c.signal}</span>
           {" · "}
-          {c.sourceUrl ? (
-            <a href={c.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: "var(--color-grape)" }}>
+          {safeUrl(c.sourceUrl) ? (
+            <a href={safeUrl(c.sourceUrl)} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: "var(--color-grape)" }}>
               🔗 Alibaba
             </a>
           ) : (
