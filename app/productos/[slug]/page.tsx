@@ -46,7 +46,17 @@ export default async function ProductPage({
         {/* visual */}
         <div>
           <div className="card aspect-square overflow-hidden relative" style={{ background: product.gradient }}>
-            {product.imageUrl ? (
+            {product.videoUrl ? (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video
+                src={product.videoUrl}
+                poster={product.imageUrl || undefined}
+                controls
+                playsInline
+                preload="metadata"
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : product.imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={product.imageUrl} alt={product.name} className="absolute inset-0 w-full h-full object-cover" />
             ) : (

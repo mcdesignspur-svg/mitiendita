@@ -17,6 +17,7 @@ import {
   type FormState,
 } from "@/lib/actions";
 import { ImageEditor } from "./image-editor";
+import { VideoUploader } from "./video-uploader";
 
 export function ProductForm({
   mode,
@@ -37,6 +38,7 @@ export function ProductForm({
   const [emoji, setEmoji] = useState(product?.emoji ?? "📦");
   const [gradient, setGradient] = useState(product?.gradient ?? GRADIENT_PRESETS[0]);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [videoUrl, setVideoUrl] = useState(product?.videoUrl ?? "");
   const [tagline, setTagline] = useState(product?.tagline ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
@@ -283,6 +285,17 @@ export function ProductForm({
               />
             ))}
           </div>
+        </fieldset>
+
+        {/* Video */}
+        <fieldset className="card p-6">
+          <legend className="font-display text-xl px-2">Video del producto</legend>
+          <input type="hidden" name="videoUrl" value={videoUrl} />
+          <p className="text-sm mb-3 mt-2" style={{ color: "var(--color-ink-soft)" }}>
+            Opcional. Si subes un video, será el visual principal en la ficha (la
+            imagen se usa como portada). Ideal para mostrar el producto en acción.
+          </p>
+          <VideoUploader value={videoUrl} onChange={setVideoUrl} />
         </fieldset>
       </div>
 

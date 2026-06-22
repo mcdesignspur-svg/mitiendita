@@ -11,6 +11,8 @@ export interface Product {
   gradient: string;
   /** URL de la imagen real del producto (Vercel Blob). Si falta, se usa gradient+emoji. */
   imageUrl?: string;
+  /** URL de un video del producto (Vercel Blob). Si existe, es el visual principal. */
+  videoUrl?: string;
   category: string;
   tagline: string;
   description: string;

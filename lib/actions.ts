@@ -188,6 +188,13 @@ export async function checkoutAction(
     | "b2b";
   const businessId = String(formData.get("businessId") || "") || undefined;
 
+  // Link cerrado (`/exclusivo/[slug]`): confirmación y cancelación quedan
+  // dentro del funnel cerrado, sin mandar al cliente al carrito/catálogo.
+  const fromExclusivo = String(formData.get("origin") || "") === "exclusivo";
+  const slug = String(formData.get("slug") || "").trim();
+  const graciasPath = fromExclusivo ? "/exclusivo/gracias" : "/carrito/gracias";
+  const graciasQ = fromExclusivo && slug ? `&p=${encodeURIComponent(slug)}` : "";
+
   let items: OrderItem[] = [];
   try {
     items = JSON.parse(String(formData.get("items") || "[]"));
@@ -216,7 +223,7 @@ export async function checkoutAction(
       paymentMethod: "factura",
     });
     await notifyOrderConfirmation(order).catch(() => {});
-    redirect(`/carrito/gracias?o=${order.id}`);
+    redirect(`${graciasPath}?o=${order.id}${graciasQ}`);
   }
 
   const method = String(formData.get("method") || "");
@@ -282,8 +289,8 @@ export async function checkoutAction(
               ]
             : undefined,
         metadata: { orderId: order.id },
-        success_url: `${origin}/carrito/gracias?o=${order.id}`,
-        cancel_url: `${origin}/carrito`,
+        success_url: `${origin}${graciasPath}?o=${order.id}${graciasQ}`,
+        cancel_url: fromExclusivo && slug ? `${origin}/exclusivo/${slug}` : `${origin}/carrito`,
       });
       await updateOrder(order.id, { stripeSessionId: session.id });
       url = session.url;
@@ -297,7 +304,7 @@ export async function checkoutAction(
   // --- Fallback sin Stripe (demo): registra la orden y muestra confirmación ---
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
   await notifyOrderConfirmation(order).catch(() => {});
-  redirect(`/carrito/gracias?o=${order.id}`);
+  redirect(`${graciasPath}?o=${order.id}${graciasQ}`);
 }
 
 // --- AI: generador de copy (admin) -----------------------------
@@ -350,6 +357,7 @@ function parseProductForm(fd: FormData): {
     emoji: String(fd.get("emoji") || "📦").trim() || "📦",
     gradient: String(fd.get("gradient") || "linear-gradient(135deg,#ff5a36,#ffc53d)"),
     imageUrl: String(fd.get("imageUrl") || "").trim() || undefined,
+    videoUrl: String(fd.get("videoUrl") || "").trim() || undefined,
     category: String(fd.get("category") || "General").trim() || "General",
     grupoIds,
     tagline: String(fd.get("tagline") || "").trim(),
