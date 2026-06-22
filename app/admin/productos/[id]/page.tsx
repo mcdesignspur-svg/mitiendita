@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getProductById, listCategories, listGrupos } from "@/lib/db";
 import { ProductForm } from "@/components/product-form";
 import { DeleteProductButton } from "@/components/confirm-delete";
+import { CopyClosedLink } from "@/components/copy-closed-link";
 
 export const metadata = { title: "Editar producto — Mi Tiendita PR" };
 
@@ -31,6 +32,7 @@ export default async function EditarProductoPage({
           <Link href={`/productos/${product.slug}`} className="btn btn-ghost btn-sm" target="_blank">
             Ver en tienda ↗
           </Link>
+          <CopyClosedLink slug={product.slug} />
           <DeleteProductButton id={product.id} name={product.name} label="🗑 Eliminar" />
         </div>
       </div>

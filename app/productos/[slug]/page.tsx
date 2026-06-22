@@ -6,7 +6,7 @@ import { getProductBySlug, relatedProducts } from "@/lib/db";
 import { getSessionBusiness } from "@/lib/auth";
 import { productImages } from "@/lib/products";
 import { toPublicProduct } from "@/lib/public-product";
-import { safeImageUrl } from "@/lib/url-safe";
+import { safeImageUrl, safeVideoUrl } from "@/lib/url-safe";
 import { ProductDetailBuy } from "@/components/product-detail-buy";
 import { ProductGallery } from "@/components/product-gallery";
 import { ProductCard } from "@/components/product-card";
@@ -49,6 +49,7 @@ export default async function ProductPage({
   const relatedPub = related.map((p) => toPublicProduct(p, verified));
 
   const imageUrl = safeImageUrl(product.imageUrl);
+  const videoUrl = safeVideoUrl(product.videoUrl);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -86,6 +87,18 @@ export default async function ProductPage({
       <div className="grid lg:grid-cols-2 gap-10">
         {/* visual */}
         <div>
+          {videoUrl && (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              src={videoUrl}
+              poster={imageUrl ?? undefined}
+              controls
+              playsInline
+              preload="metadata"
+              className="card aspect-square w-full object-cover mb-3"
+              style={{ background: "#000" }}
+            />
+          )}
           <ProductGallery
             images={productImages(product)}
             gradient={product.gradient}

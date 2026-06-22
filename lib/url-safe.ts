@@ -37,3 +37,22 @@ export function safeImageUrl(input: unknown): string | undefined {
     return undefined;
   }
 }
+
+// Los videos del producto se suben a Vercel Blob; solo aceptamos ese host.
+const VIDEO_HOST_SUFFIXES = [".public.blob.vercel-storage.com"];
+
+/**
+ * Devuelve la URL de video si es http(s) y de un host permitido (Vercel Blob);
+ * si no, undefined. Usado por el form de productos y al renderizar el <video>.
+ */
+export function safeVideoUrl(input: unknown): string | undefined {
+  const url = safeUrl(input);
+  if (!url) return undefined;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    const ok = VIDEO_HOST_SUFFIXES.some((s) => host === s.slice(1) || host.endsWith(s));
+    return ok ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}

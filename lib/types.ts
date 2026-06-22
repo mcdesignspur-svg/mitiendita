@@ -13,6 +13,8 @@ export interface Product {
   imageUrl?: string;
   /** Galería de fotos del producto (carrusel). La primera es la portada (== imageUrl). */
   imageUrls?: string[];
+  /** URL de un video del producto (Vercel Blob). Si existe, es el visual destacado. */
+  videoUrl?: string;
   category: string;
   tagline: string;
   description: string;
