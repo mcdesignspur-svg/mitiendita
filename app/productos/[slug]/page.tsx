@@ -87,20 +87,9 @@ export default async function ProductPage({
       <div className="grid lg:grid-cols-2 gap-10">
         {/* visual */}
         <div>
-          {videoUrl && (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
-            <video
-              src={videoUrl}
-              poster={imageUrl ?? undefined}
-              controls
-              playsInline
-              preload="metadata"
-              className="card aspect-square w-full object-cover mb-3"
-              style={{ background: "#000" }}
-            />
-          )}
           <ProductGallery
             images={productImages(product)}
+            videoUrl={videoUrl}
             gradient={product.gradient}
             emoji={product.emoji}
             name={product.name}

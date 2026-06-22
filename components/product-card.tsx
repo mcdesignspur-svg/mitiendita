@@ -8,6 +8,7 @@ import { effectiveRetailPublic, hasDiscountPublic } from "@/lib/public-product";
 import { money } from "@/lib/format";
 import { safeImageUrl } from "@/lib/url-safe";
 import { useCart } from "./cart-context";
+import { CardName } from "./card-name";
 
 export function ProductCard({
   product,
@@ -77,11 +78,7 @@ export function ProductCard({
         <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--color-teal-deep)" }}>
           {product.category}
         </span>
-        <Link href={`/productos/${product.slug}`}>
-          <h3 className="font-display text-lg leading-tight mt-1 mb-1 hover:underline">
-            {product.name}
-          </h3>
-        </Link>
+        <CardName name={product.name} slug={product.slug} />
         <p className="text-sm flex-1" style={{ color: "var(--color-ink-soft)" }}>
           {product.tagline}
         </p>

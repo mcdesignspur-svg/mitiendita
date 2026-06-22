@@ -4,7 +4,7 @@ import { getProductBySlug } from "@/lib/db";
 import { getSessionBusiness } from "@/lib/auth";
 import { productImages } from "@/lib/products";
 import { toPublicProduct } from "@/lib/public-product";
-import { safeImageUrl, safeVideoUrl } from "@/lib/url-safe";
+import { safeVideoUrl } from "@/lib/url-safe";
 import { ProductGallery } from "@/components/product-gallery";
 import { ExclusiveBuy } from "@/components/exclusive-buy";
 
@@ -40,7 +40,6 @@ export default async function ExclusiveProductPage({
 
   const images = productImages(product);
   const videoUrl = safeVideoUrl(product.videoUrl);
-  const poster = safeImageUrl(product.imageUrl);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--color-cream)" }}>
@@ -71,20 +70,9 @@ export default async function ExclusiveProductPage({
         <div className="grid lg:grid-cols-2 gap-10">
           {/* visual */}
           <div>
-            {videoUrl && (
-              // eslint-disable-next-line jsx-a11y/media-has-caption
-              <video
-                src={videoUrl}
-                poster={poster ?? undefined}
-                controls
-                playsInline
-                preload="metadata"
-                className="card aspect-square w-full object-cover mb-3"
-                style={{ background: "#000" }}
-              />
-            )}
             <ProductGallery
               images={images}
+              videoUrl={videoUrl}
               gradient={product.gradient}
               emoji={product.emoji}
               name={product.name}
