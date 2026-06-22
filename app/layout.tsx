@@ -5,6 +5,7 @@ import { CartProvider } from "@/components/cart-context";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ShopAssistant } from "@/components/shop-assistant";
+import { ChromeGate } from "@/components/chrome-gate";
 import { getSessionBusiness } from "@/lib/auth";
 
 const display = Bricolage_Grotesque({
@@ -66,10 +67,13 @@ export default async function RootLayout({
     <html lang="es">
       <body className={`${display.variable} ${body.variable}`}>
         <CartProvider>
-          <Header session={session} />
-          <main>{children}</main>
-          <Footer />
-          <ShopAssistant showDemo={showDemo} />
+          <ChromeGate
+            header={<Header session={session} />}
+            footer={<Footer />}
+            assistant={<ShopAssistant showDemo={showDemo} />}
+          >
+            {children}
+          </ChromeGate>
         </CartProvider>
       </body>
     </html>

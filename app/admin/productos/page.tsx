@@ -4,6 +4,7 @@ import { effectiveRetail, hasDiscount } from "@/lib/products";
 import { money } from "@/lib/format";
 import { toggleProductActiveAction } from "@/lib/actions";
 import { DeleteProductButton } from "@/components/confirm-delete";
+import { CopyClosedLink } from "@/components/copy-closed-link";
 
 export const metadata = { title: "Productos — Mi Tiendita PR" };
 
@@ -127,6 +128,7 @@ export default async function AdminProductosPage({
                     {visible ? "● Visible" : "○ Oculto"}
                   </button>
                 </form>
+                <CopyClosedLink slug={p.slug} />
                 <Link href={`/admin/productos/${p.id}`} className="btn btn-ghost btn-sm">Editar</Link>
                 <DeleteProductButton id={p.id} name={p.name} />
               </div>

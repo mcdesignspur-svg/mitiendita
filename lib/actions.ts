@@ -13,7 +13,7 @@ import {
   type PricedLine,
 } from "./pricing";
 import { toCents } from "./money";
-import { safeUrl, safeImageUrl } from "./url-safe";
+import { safeUrl, safeImageUrl, safeVideoUrl } from "./url-safe";
 import { rateLimit } from "./rate-limit";
 import {
   createBusiness,
@@ -289,6 +289,13 @@ export async function checkoutAction(
 
   const { kind, businessId, items, shipping, total } = priced;
 
+  // Link cerrado (/exclusivo/[slug]): confirmación y cancelación quedan dentro
+  // del funnel cerrado, sin mandar al cliente al carrito/catálogo.
+  const fromExclusivo = String(formData.get("origin") || "") === "exclusivo";
+  const slug = String(formData.get("slug") || "").trim();
+  const graciasPath = fromExclusivo ? "/exclusivo/gracias" : "/carrito/gracias";
+  const graciasQ = fromExclusivo && slug ? `&p=${encodeURIComponent(slug)}` : "";
+
   // Cash-first: B2B paga AHORA igual que B2C (tarjeta vía Stripe, o ATH Móvil
   // por su propia ruta). Ya no se emite factura/crédito automático — el crédito
   // se gana después con historial de compra (ver ESTRATEGIA-B2B.md, Fase 4).
@@ -341,8 +348,8 @@ export async function checkoutAction(
               ]
             : undefined,
         metadata: { orderId: order.id },
-        success_url: `${origin}/carrito/gracias?o=${order.id}`,
-        cancel_url: `${origin}/carrito`,
+        success_url: `${origin}${graciasPath}?o=${order.id}${graciasQ}`,
+        cancel_url: fromExclusivo && slug ? `${origin}/exclusivo/${slug}` : `${origin}/carrito`,
       });
       await updateOrder(order.id, { stripeSessionId: session.id });
       url = session.url;
@@ -358,7 +365,7 @@ export async function checkoutAction(
   const order = await createOrder({ kind, businessId, customerName, email, items, shipping, total });
   await applyOrderInventory(order).catch(() => {});
   await notifyOrderConfirmation(order).catch(() => {});
-  redirect(`/carrito/gracias?o=${order.id}`);
+  redirect(`${graciasPath}?o=${order.id}${graciasQ}`);
 }
 
 // --- AI: generador de copy (admin) -----------------------------
@@ -426,6 +433,9 @@ function parseProductForm(fd: FormData): {
   // A-3: sourceUrl (enlace al proveedor) se valida con safeUrl; inválida → "".
   const sourceUrl = safeUrl(fd.get("sourceUrl")) || "";
 
+  // Video: validado con safeVideoUrl (solo host de Vercel Blob); inválida → undefined.
+  const videoUrl = safeVideoUrl(fd.get("videoUrl")) || undefined;
+
   const value: Omit<Product, "id" | "slug"> & { slug?: string } = {
     name,
     slug: String(fd.get("slug") || "").trim() || undefined,
@@ -433,6 +443,7 @@ function parseProductForm(fd: FormData): {
     gradient: String(fd.get("gradient") || "linear-gradient(135deg,#ff5a36,#ffc53d)"),
     imageUrl: cover,
     imageUrls,
+    videoUrl,
     category: String(fd.get("category") || "General").trim() || "General",
     grupoIds,
     tagline: String(fd.get("tagline") || "").trim(),
