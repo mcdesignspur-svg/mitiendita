@@ -12,6 +12,7 @@
     "db:seed": "tsx lib/seed.ts",
     "migrate:catalog": "tsx lib/migrate-catalog.ts",
     "migrate:grupos": "tsx lib/migrate-grupos.ts",
+    "catalog:keep-thumbcamera": "tsx lib/prune-catalog-thumbcamera.ts",
     "operator": "tsx lib/operator.ts"
   },
   "dependencies": {
