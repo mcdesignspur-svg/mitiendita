@@ -10,8 +10,11 @@
  * Uso:  import "./load-env";  // <- primera línea de imports del script
  */
 try {
-  // No pisar vars ya presentes (Vercel build/runtime, `vercel env run`, etc.).
-  process.loadEnvFile({ path: ".env", override: false });
+  const snap = { ...process.env };
+  process.loadEnvFile(".env");
+  for (const k of Object.keys(snap)) {
+    process.env[k] = snap[k]!;
+  }
 } catch {
   /* .env es opcional: sin él se usa el file-store */
 }
