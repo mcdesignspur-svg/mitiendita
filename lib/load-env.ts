@@ -10,7 +10,8 @@
  * Uso:  import "./load-env";  // <- primera línea de imports del script
  */
 try {
-  process.loadEnvFile(".env");
+  // No pisar vars ya presentes (Vercel build/runtime, `vercel env run`, etc.).
+  process.loadEnvFile({ path: ".env", override: false });
 } catch {
   /* .env es opcional: sin él se usa el file-store */
 }
