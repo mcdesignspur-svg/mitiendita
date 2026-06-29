@@ -32,7 +32,7 @@ export default async function EditarProductoPage({
           <Link href={`/productos/${product.slug}`} className="btn btn-ghost btn-sm" target="_blank">
             Ver en tienda ↗
           </Link>
-          <CopyClosedLink slug={product.slug} />
+          <CopyClosedLink slug={product.slug} productName={product.name} />
           <DeleteProductButton id={product.id} name={product.name} label="🗑 Eliminar" />
         </div>
       </div>

@@ -128,7 +128,7 @@ export default async function AdminProductosPage({
                     {visible ? "● Visible" : "○ Oculto"}
                   </button>
                 </form>
-                <CopyClosedLink slug={p.slug} />
+                <CopyClosedLink slug={p.slug} productName={p.name} />
                 <Link href={`/admin/productos/${p.id}`} className="btn btn-ghost btn-sm">Editar</Link>
                 <DeleteProductButton id={p.id} name={p.name} />
               </div>

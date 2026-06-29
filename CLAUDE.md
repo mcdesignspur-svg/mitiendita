@@ -68,6 +68,10 @@ All writes live in `lib/actions.ts` (`"use server"`). Form actions follow the `u
 
 Client-side only: `components/cart-context.tsx` persists lines to `localStorage` (`mt_cart_v1`). Checkout serializes items to JSON in a hidden field and posts to `checkoutAction`. Order shipping = the max `shippingPrice` across cart items.
 
+### Links cerrados (`/exclusivo/*`)
+
+Closed product links for quick one-off sales (WhatsApp, SMS, etc.). Route: `/exclusivo/[slug]` shows **only** that product — `ChromeGate` hides header/footer/assistant on `/exclusivo/*`. `ExclusiveBuy` posts `[{productId, qty}]` to `checkoutAction` with `origin=exclusivo` so success/cancel stay in `/exclusivo/gracias` and `/exclusivo/[slug]`. Admin copies the URL via `CopyClosedLink` (preview modal → copy/open). Pages are `noindex`; inactive products 404. Does not hard-block other site URLs — only removes navigation chrome in that funnel.
+
 ### AI core (graceful degradation) — the brain
 
 `lib/ai.ts` is the centralized AI layer. Every call routes through the Vercel AI Gateway via plain `"provider/model"` strings (`AI_MODEL`, default `"anthropic/claude-sonnet-4-6"`) and uses **`generateObject` + zod schemas** for reliable structured output. The internal `runObject(schema, {...})` helper returns `null` when `AI_GATEWAY_API_KEY` is missing or the call throws, so **every public function falls back to a deterministic local result** — the whole app works with no key. `aiEnabled()` reports whether the real model is active.
