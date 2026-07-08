@@ -5,9 +5,9 @@ import type { ReactNode } from "react";
 
 /**
  * Envuelve el "chrome" del sitio (header, footer, asistente) y lo oculta en los
- * links cerrados (`/exclusivo/*`). Esas rutas muestran SOLO el producto y su
- * compra, sin navegación al resto de la tienda. El `<main>` se mantiene siempre
- * para conservar el layout/estilos.
+ * links cerrados (`/exclusivo/*`) y en la página de contraseña del candado
+ * (`/entrar`). Esas rutas se muestran solas, sin navegación al resto del sitio.
+ * El `<main>` se mantiene siempre para conservar el layout/estilos.
  */
 export function ChromeGate({
   header,
@@ -21,7 +21,9 @@ export function ChromeGate({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const closed = pathname?.startsWith("/exclusivo") ?? false;
+  const closed =
+    (pathname?.startsWith("/exclusivo") || pathname?.startsWith("/entrar")) ??
+    false;
 
   if (closed) return <main>{children}</main>;
 
