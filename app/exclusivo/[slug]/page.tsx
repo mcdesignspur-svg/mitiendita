@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import type { Metadata } from "next";
 import { getProductBySlug } from "@/lib/db";
 import { getSessionBusiness } from "@/lib/auth";
@@ -43,21 +44,17 @@ export default async function ExclusiveProductPage({
 
   return (
     <div className="min-h-screen" style={{ background: "var(--color-cream)" }}>
-      {/* marca no-navegable: se ve legítimo pero no lleva a ningún otro sitio */}
+      {/* marca no-navegable: el logo real del sitio, pero sin link (no saca al
+          cliente del producto — misma intención del link cerrado) */}
       <div className="wrap pt-8 pb-2 flex items-center gap-2">
-        <span
-          className="grid place-items-center w-9 h-9 rounded-xl text-lg"
-          style={{
-            background: "var(--color-coral)",
-            border: "2px solid var(--color-ink)",
-            boxShadow: "var(--shadow-pop-sm)",
-          }}
-        >
-          🛒
-        </span>
-        <span className="font-display text-xl font-bold leading-none">
-          Mi Tiendita<span style={{ color: "var(--color-coral)" }}> PR</span>
-        </span>
+        <Image
+          src="/logo.svg"
+          alt="Mi Tiendita PR"
+          width={120}
+          height={36}
+          className="h-9 w-auto"
+          priority
+        />
         <span
           className="ml-auto text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full"
           style={{ background: "var(--color-ink)", color: "var(--color-cream)" }}
