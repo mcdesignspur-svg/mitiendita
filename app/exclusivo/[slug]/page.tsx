@@ -96,8 +96,8 @@ export default async function ExclusiveProductPage({
             <ExclusiveBuy
               product={pub}
               wholesale={verified}
-              athPhone={process.env.ATH_MOVIL_PHONE}
-              athNombre={process.env.ATH_MOVIL_NOMBRE}
+              athPhone={process.env.ATH_MOVIL_PHONE || "787-310-3327"}
+              athNombre={process.env.ATH_MOVIL_NOMBRE || "Mi Tiendita PR"}
             />
 
             <div className="mt-8">
