@@ -99,6 +99,7 @@ En Vercel (deploy), añade `DATABASE_URL` en **Settings → Environment Variable
 |------|-------------|
 | `/` | Home / storefront |
 | `/productos` · `/productos/[slug]` | Catálogo y detalle (precio según sesión) |
+| `/exclusivo/[slug]` · `/exclusivo/gracias` | Link cerrado: un solo producto + checkout contenido (sin navegación al resto de la tienda) |
 | `/carrito` · `/carrito/gracias` | Carrito y confirmación |
 | `/para-negocios` | Propuesta B2B + cómo funciona la verificación |
 | `/negocios/registro` · `/negocios/entrar` · `/negocios/cuenta` | Flujo B2B |
@@ -120,6 +121,27 @@ Los productos viven en el store (`/.data/db.json`, sembrado desde
 - El **envío** del pedido = el más alto entre los productos del carrito.
 - Ocultar un producto (toggle "Visible/Oculto") lo saca de la tienda pública sin borrarlo.
 - Migración automática: si el `db.json` existía sin productos, se siembra al primer acceso.
+
+### Links cerrados (venta rápida)
+
+Para vender un producto sin mandar al cliente al catálogo completo, usa un **link
+cerrado**:
+
+1. En `/admin/productos` (lista) o al editar un producto, pulsa **🔒 Link cerrado**.
+2. Se abre un preview con la URL (`/exclusivo/<slug>`), el nombre del producto y
+   botones para **copiar** o **abrir en nueva pestaña**.
+3. Envía ese enlace por WhatsApp, SMS, email o redes.
+
+**Qué ve el cliente:** solo ese producto (fotos, descripción, precio y compra
+directa con Stripe). No hay header, footer, asistente ni links al resto de la
+tienda. La confirmación también es cerrada (`/exclusivo/gracias`).
+
+**Notas:**
+
+- El producto debe estar **visible** (activo); si está oculto, el link devuelve 404.
+- La página lleva `noindex` para que no aparezca en buscadores.
+- No bloquea otras URLs del sitio — solo oculta la navegación en esa experiencia.
+- Si un negocio verificado entra con su sesión, verá precio mayorista en ese link.
 
 ## Cómo funciona el gating de precios
 
