@@ -93,7 +93,12 @@ export default async function ExclusiveProductPage({
               {pub.tagline}
             </p>
 
-            <ExclusiveBuy product={pub} wholesale={verified} />
+            <ExclusiveBuy
+              product={pub}
+              wholesale={verified}
+              athPhone={process.env.ATH_MOVIL_PHONE}
+              athNombre={process.env.ATH_MOVIL_NOMBRE}
+            />
 
             <div className="mt-8">
               <h2 className="font-display text-xl mb-2">Descripción</h2>
