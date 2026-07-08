@@ -87,7 +87,11 @@ import type {
   ShipmentStatus,
 } from "./types";
 
-export type FormState = { error?: string };
+export type FormState = {
+  error?: string;
+  /** Orden creada (checkout manual ATH Móvil): id + total a pagar. */
+  order?: { id: string; total: number };
+};
 
 export type CopyState = { result?: CopyResult; error?: string };
 
@@ -406,6 +410,49 @@ export async function checkoutAction(
   await applyOrderInventory(order).catch(() => {});
   await notifyOrderConfirmation(order).catch(() => {});
   redirect(`${graciasPath}?o=${order.id}${graciasQ}`);
+}
+
+// --- Checkout manual ATH Móvil (link exclusivo) -----------------
+// Resuelve mientras ATH Móvil no está habilitado como pasarela: en vez de cobrar,
+// se CREA la orden (ath_movil / pendiente_pago) y el cliente paga a mano enviando
+// el total al número de ATH Móvil que se le muestra. Miguel confirma el pago en
+// /admin (ahí se descuenta el inventario). El precio se re-calcula server-side
+// igual que en checkoutAction — el cliente solo manda [{productId, qty}].
+export async function crearOrdenAthAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const customerName = String(formData.get("customerName") || "").trim();
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  if (!customerName || !email) return { error: "Falta tu nombre o email." };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Email inválido." };
+
+  let intentRaw: unknown = [];
+  try {
+    intentRaw = JSON.parse(String(formData.get("items") || "[]"));
+  } catch {
+    return { error: "Pedido inválido." };
+  }
+  const priced = await priceCart(parseIntentLines(intentRaw));
+  if (isPricedError(priced)) return { error: priced.error };
+
+  const { kind, businessId, items, shipping, total } = priced;
+
+  // Inventario NO se descuenta aquí: queda pendiente hasta que se confirme el
+  // pago en /admin (misma lógica que Stripe, que descuenta al confirmar `paid`).
+  const order = await createOrder({
+    kind,
+    businessId,
+    customerName,
+    email,
+    items,
+    shipping,
+    total,
+    paymentStatus: "pendiente_pago",
+    paymentMethod: "ath_movil",
+  });
+
+  return { order: { id: order.id, total: order.total } };
 }
 
 // --- AI: generador de copy (admin) -----------------------------
