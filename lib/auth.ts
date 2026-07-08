@@ -5,8 +5,17 @@ import { getBusinessById } from "./db";
 
 // A-1(a): En producción, SESSION_SECRET debe estar seteado explícitamente.
 // Fallar al cargar es preferible a silenciosamente usar un secreto conocido.
+// Excepciones: fase de build de Next (collect page data) y deploys Preview de
+// Vercel, que a menudo no tienen todos los secrets de Production.
 const _rawSecret = process.env.SESSION_SECRET;
-if (!_rawSecret && process.env.NODE_ENV === "production") {
+const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
+const isVercelPreview = process.env.VERCEL_ENV === "preview";
+if (
+  !_rawSecret &&
+  process.env.NODE_ENV === "production" &&
+  !isNextBuild &&
+  !isVercelPreview
+) {
   throw new Error(
     "[auth] SESSION_SECRET no está seteado. Configúralo en las variables de entorno antes de deployar.",
   );
