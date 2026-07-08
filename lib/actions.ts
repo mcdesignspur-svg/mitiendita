@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getStripe, stripeEnabled } from "./stripe";
 import {
   priceCart,
@@ -15,6 +15,7 @@ import {
 import { toCents } from "./money";
 import { safeUrl, safeImageUrl, safeVideoUrl } from "./url-safe";
 import { rateLimit } from "./rate-limit";
+import { UNLOCK_COOKIE, makeUnlockToken, unlockCookieOptions } from "./site-lock";
 import {
   createBusiness,
   createOrder,
@@ -209,6 +210,45 @@ export async function adminLoginAction(
 export async function adminLogoutAction(): Promise<void> {
   await clearAdminSession();
   redirect("/admin");
+}
+
+// --- Candado del sitio ------------------------------------------
+/** Ruta interna segura para volver tras desbloquear (evita open-redirect). */
+function safeNext(next: string): string {
+  if (next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\")) {
+    return next;
+  }
+  return "/";
+}
+
+/**
+ * Desbloquea el sitio público con la contraseña (misma que ADMIN_PASSWORD) y
+ * setea la cookie `mt_unlock`. El middleware la verifica en cada request. No
+ * cubre /exclusivo/* ni /admin (ver middleware.ts).
+ */
+export async function unlockSiteAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  // Rate-limit por IP para frenar fuerza bruta sobre la contraseña del sitio.
+  const h = await headers();
+  const ip =
+    (h.get("x-forwarded-for") || "").split(",")[0].trim() ||
+    h.get("x-real-ip") ||
+    "desconocido";
+  const limited = rateLimit(`site-unlock:${ip}`, 8, 60_000);
+  if (!limited.ok) {
+    const secs = Math.ceil(limited.retryAfterMs / 1000);
+    return { error: `Demasiados intentos. Espera ${secs}s e intenta de nuevo.` };
+  }
+
+  const password = String(formData.get("password") || "");
+  if (!checkAdminPassword(password)) {
+    return { error: "Contraseña incorrecta." };
+  }
+  const jar = await cookies();
+  jar.set(UNLOCK_COOKIE, await makeUnlockToken(), unlockCookieOptions());
+  redirect(safeNext(String(formData.get("next") || "/")));
 }
 
 export async function approveBusinessAction(formData: FormData): Promise<void> {
