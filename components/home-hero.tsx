@@ -8,20 +8,13 @@ const TILES = [
   { emoji: "🌀", color: "var(--color-grape)" },
 ];
 
-const MARQUEE = [
-  "Cargadores",
-  "Audífonos TWS",
-  "Gadgets de auto",
-  "Conveniencia & impulso",
-  "Hogar viral",
-  "Power banks",
-  "Accesorios virales",
-  "Importación directa",
-];
+/** Escondido por ahora — poner en true para restaurar el hero completo. */
+const MOSTRAR_HERO = false;
 
 export function HomeHero() {
   return (
     <section className="relative overflow-hidden">
+      {MOSTRAR_HERO && (
       <div className="wrap pt-14 pb-12 md:pt-20 md:pb-16 grid lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
         <div>
           <span className="eyebrow reveal" style={{ animationDelay: "0ms" }}>
@@ -80,28 +73,7 @@ export function HomeHero() {
           </div>
         </div>
       </div>
-
-      {/* marquee — divisor de marca */}
-      <div
-        className="border-y-2 py-3 overflow-hidden"
-        style={{ borderColor: "var(--color-ink)", background: "var(--color-ink)" }}
-      >
-        <div className="marquee-track" aria-hidden="true">
-          {[0, 1].map((dup) => (
-            <div key={dup} className="flex shrink-0" aria-hidden={dup === 1 ? "true" : undefined}>
-              {MARQUEE.map((w) => (
-                <span
-                  key={dup + w}
-                  className="px-6 text-sm font-bold uppercase tracking-wider"
-                  style={{ color: "var(--color-cream)" }}
-                >
-                  ✦ {w}
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
     </section>
   );
 }

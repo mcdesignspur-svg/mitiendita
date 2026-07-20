@@ -4,7 +4,6 @@ import { toPublicProduct } from "@/lib/public-product";
 import { HomeHero } from "@/components/home-hero";
 import { HomeSegments } from "@/components/home-segments";
 import { HomeFeatured } from "@/components/home-featured";
-import { HomeWhy } from "@/components/home-why";
 import { HomeB2bCta } from "@/components/home-b2b-cta";
 
 export default async function HomePage() {
@@ -19,9 +18,8 @@ export default async function HomePage() {
   return (
     <>
       <HomeHero />
-      <HomeSegments />
       <HomeFeatured products={featured} wholesale={verified} />
-      <HomeWhy />
+      <HomeSegments />
       <HomeB2bCta />
     </>
   );
